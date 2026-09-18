@@ -47,20 +47,51 @@ export function ControlPanel({
 }: ControlPanelProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [panelPos, setPanelPos] = useState({ x: 20, y: 20 });
 
   const selectedAvatar = avatars.find(a => a.id === selectedId) ?? null;
   const editingAvatar = avatars.find(a => a.id === editingId) ?? null;
 
   const isEdit = mode === 'edit';
 
+  // ── Dragging the Control Panel ───────────────────────────────────
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    // Only drag when clicking header background or title, not buttons/inputs
+    if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialPos = { ...panelPos };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      setPanelPos({
+        x: Math.max(0, initialPos.x + dx),
+        y: Math.max(0, initialPos.y + dy),
+      });
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
   return (
     <>
-      <div style={panelStyle}>
-        {/* ── Header ────────────────────────────────────────── */}
-        <div style={header}>
-          <span style={{ fontSize: 14, fontWeight: 'bold', letterSpacing: 1 }}>
-            🎮 AVATAR OVERLAY
-          </span>
+      <div style={{ ...panelStyle, left: panelPos.x, top: panelPos.y }}>
+        {/* ── Header (Draggable Handle) ───────────────────────── */}
+        <div style={header} onMouseDown={handleHeaderMouseDown}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'grab' }}>
+            <span style={{ fontSize: 13, color: '#718096' }}>⠿</span>
+            <span style={{ fontSize: 13, fontWeight: 'bold', letterSpacing: 1 }}>
+              🎮 OVERLAY
+            </span>
+          </div>
           <button
             onClick={onModeToggle}
             style={{
