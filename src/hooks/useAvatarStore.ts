@@ -7,7 +7,6 @@ import { DEFAULT_AVATARS, LAYOUT_STORAGE_KEY } from '../types/avatar';
 
 interface UseAvatarStoreResult {
   avatars: AvatarConfig[];
-  speaking: Record<string, boolean>;
   mode: AppMode;
   selectedId: string | null;
   setMode: (mode: AppMode) => void;
@@ -15,7 +14,6 @@ interface UseAvatarStoreResult {
   addAvatar: (avatar: Omit<AvatarConfig, 'id' | 'zIndex'>) => void;
   updateAvatar: (id: string, patch: Partial<AvatarConfig>) => void;
   removeAvatar: (id: string) => void;
-  setSpeaking: (id: string, value: boolean) => void;
   bringForward: (id: string) => void;
   sendBackward: (id: string) => void;
   bringToFront: (id: string) => void;
@@ -46,7 +44,6 @@ function persistLayout(avatars: AvatarConfig[]) {
 
 export function useAvatarStore(): UseAvatarStoreResult {
   const [avatars, setAvatars] = useState<AvatarConfig[]>(() => loadLayout());
-  const [speaking, setSpeakingMap] = useState<Record<string, boolean>>({});
   const [mode, setMode] = useState<AppMode>('edit');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -76,10 +73,6 @@ export function useAvatarStore(): UseAvatarStoreResult {
   const removeAvatar = useCallback((id: string) => {
     setAvatars(prev => prev.filter(a => a.id !== id));
     setSelectedId(prev => (prev === id ? null : prev));
-  }, []);
-
-  const setSpeaking = useCallback((id: string, value: boolean) => {
-    setSpeakingMap(prev => ({ ...prev, [id]: value }));
   }, []);
 
   // Layer operations
@@ -140,7 +133,6 @@ export function useAvatarStore(): UseAvatarStoreResult {
 
   return {
     avatars,
-    speaking,
     mode,
     selectedId,
     setMode,
@@ -148,7 +140,6 @@ export function useAvatarStore(): UseAvatarStoreResult {
     addAvatar,
     updateAvatar,
     removeAvatar,
-    setSpeaking,
     bringForward,
     sendBackward,
     bringToFront,
