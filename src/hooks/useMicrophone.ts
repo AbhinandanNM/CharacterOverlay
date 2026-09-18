@@ -19,7 +19,7 @@ export function useMicrophone(
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationRef = useRef<number | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onVolumeChangeRef = useRef(onVolumeChange);
 
   useEffect(() => {
@@ -39,8 +39,6 @@ export function useMicrophone(
 
     setVolume(Math.round(average));
     onVolumeChangeRef.current?.(average);
-
-    animationRef.current = requestAnimationFrame(detectVolume);
   }, []);
 
   const startMicrophone = useCallback(async () => {
@@ -59,7 +57,8 @@ export function useMicrophone(
       audioContextRef.current = audioContext;
       analyserRef.current = analyser;
 
-      detectVolume();
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(detectVolume, 35);
     } catch (error) {
       console.error(error);
       alert('Microphone permission was denied.');
@@ -68,7 +67,7 @@ export function useMicrophone(
 
   useEffect(() => {
     return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
       audioContextRef.current?.close();
     };
   }, []);
