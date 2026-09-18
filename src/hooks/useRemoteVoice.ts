@@ -34,6 +34,8 @@ interface UseRemoteVoiceResult {
   setRoomId: (roomId: string) => void;
   connect: () => void;
   disconnect: () => void;
+  sendLocalSpeaking: (userId: string, speaking: boolean) => void;
+  sendLayoutUpdate: (avatars: import('../types/avatar').AvatarConfig[]) => void;
   toggleDevTestSpeaking: (avatarId: string) => void;
 }
 
@@ -328,6 +330,27 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
     }));
   }, []);
 
+  const sendLocalSpeaking = useCallback((userId: string, speaking: boolean) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'speaking',
+        roomId: roomId.trim().toUpperCase(),
+        userId: userId.trim(),
+        speaking,
+      }));
+    }
+  }, [roomId]);
+
+  const sendLayoutUpdate = useCallback((avatars: import('../types/avatar').AvatarConfig[]) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'layout_update',
+        roomId: roomId.trim().toUpperCase(),
+        avatars,
+      }));
+    }
+  }, [roomId]);
+
   const toggleDevTestSpeaking = useCallback((avatarId: string) => {
     setDevTestSpeaking(prev => ({
       ...prev,
@@ -357,6 +380,8 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
     setRoomId,
     connect,
     disconnect,
+    sendLocalSpeaking,
+    sendLayoutUpdate,
     toggleDevTestSpeaking,
   };
 }

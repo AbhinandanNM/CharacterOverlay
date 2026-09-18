@@ -32,10 +32,9 @@ function EditorApp() {
   const remote = useRemoteVoice();
 
   const [localSpeaking, setLocalSpeaking] = useState(false);
-  const [isObsOverlayOpen, setIsObsOverlayOpen] = useState(false);
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
 
-  // Initialize BroadcastChannel for real-time synchronization with dedicated OBS Overlay
+  // Initialize BroadcastChannel for real-time local tab/window sync
   useEffect(() => {
     const channel = new BroadcastChannel("reactive-avatars-sync");
     syncChannelRef.current = channel;
@@ -50,33 +49,19 @@ function EditorApp() {
       }
     };
 
-    // Check initial OBS overlay status if in Electron
-    const api = (window as any).electronAPI;
-    if (api?.getObsOverlayStatus) {
-      api.getObsOverlayStatus().then((open: boolean) => setIsObsOverlayOpen(Boolean(open)));
-    }
-    if (api?.onObsOverlayStatusChanged) {
-      const unsubscribe = api.onObsOverlayStatusChanged((open: boolean) => {
-        setIsObsOverlayOpen(Boolean(open));
-      });
-      return () => {
-        unsubscribe?.();
-        channel.close();
-      };
-    }
-
     return () => {
       channel.close();
     };
   }, []);
 
-  // Broadcast avatar layout updates to OBS overlay
+  // Broadcast avatar layout updates to OBS overlay via WebSocket and BroadcastChannel
   useEffect(() => {
     syncChannelRef.current?.postMessage({
       type: "AVATARS_UPDATE",
       avatars: store.avatars,
     });
-  }, [store.avatars]);
+    remote.sendLayoutUpdate(store.avatars);
+  }, [store.avatars, remote.sendLayoutUpdate]);
 
   // Global overlay toggle listeners
   useEffect(() => {
@@ -128,6 +113,13 @@ function EditorApp() {
     [store.avatars, store.updateAvatar]
   );
 
+  // Broadcast local microphone speaking state to OBS overlay over WebSocket room
+  useEffect(() => {
+    const localAvatar = store.avatars.find(a => a.isLocalUser === true);
+    const localName = localAvatar?.name || localAvatar?.id || "ANM";
+    remote.sendLocalSpeaking(localName, localSpeaking);
+  }, [localSpeaking, store.avatars, remote.sendLocalSpeaking]);
+
   const compositeSpeaking = useMemo<Record<string, boolean>>(() => {
     const map: Record<string, boolean> = {};
     for (const avatar of store.avatars) {
@@ -152,26 +144,6 @@ function EditorApp() {
       speaking: compositeSpeaking,
     });
   }, [compositeSpeaking]);
-
-  const handleOpenObsOverlay = useCallback(() => {
-    const api = (window as any).electronAPI;
-    if (api?.openObsOverlay) {
-      api.openObsOverlay().then(() => setIsObsOverlayOpen(true));
-    } else {
-      // Fallback in web browser: open overlay URL in popup
-      window.open("/?overlay=true", "ReactiveAvatarsObsOverlay", "width=1920,height=1080,menubar=no,toolbar=no,location=no,status=no");
-      setIsObsOverlayOpen(true);
-    }
-  }, []);
-
-  const handleCloseObsOverlay = useCallback(() => {
-    const api = (window as any).electronAPI;
-    if (api?.closeObsOverlay) {
-      api.closeObsOverlay().then(() => setIsObsOverlayOpen(false));
-    } else {
-      setIsObsOverlayOpen(false);
-    }
-  }, []);
 
   return (
     <div className="app">
@@ -199,9 +171,6 @@ function EditorApp() {
           remoteSpeaking={remote.remoteSpeaking}
           devTestSpeaking={remote.devTestSpeaking}
           debugInfo={remote.debugInfo}
-          isObsOverlayOpen={isObsOverlayOpen}
-          onOpenObsOverlay={handleOpenObsOverlay}
-          onCloseObsOverlay={handleCloseObsOverlay}
           onSetServerUrl={remote.setServerUrl}
           onSetRoomId={remote.setRoomId}
           onConnectNetwork={remote.connect}

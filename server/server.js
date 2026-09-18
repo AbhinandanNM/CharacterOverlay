@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
-const SERVER_VERSION = '2.4.0';
+const SERVER_VERSION = '2.5.0';
 const COMPANION_DIR = path.join(__dirname, '..', 'companion');
 const VOICE_SAFETY_TIMEOUT_MS = 3500; // Force speaking:false if no voice update/heartbeat for 3.5s
 
@@ -18,13 +18,28 @@ function log(tag, msg, extra = '') {
   console.log(`[${ts()}] [${tag}] ${msg}${extra ? ' | ' + extra : ''}`);
 }
 
+/**
+ * roomLayouts: Map<roomId, Array<AvatarConfig>>
+ */
+const roomLayouts = new Map();
+
 // ── HTTP Server ───────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = parsedUrl.pathname;
 
   // Health endpoint
-  if (req.url === '/health') {
+  if (pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
@@ -36,12 +51,22 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Layout API endpoint for OBS Browser Source / external sync
+  if (pathname === '/api/layout') {
+    const roomId = (parsedUrl.searchParams.get('roomId') || 'ANTIC-STREAM-01').trim().toUpperCase();
+    const layout = roomLayouts.get(roomId) || null;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ roomId, layout, version: SERVER_VERSION, time: ts() }));
+    return;
+  }
+
   // Debug rooms endpoint (metadata only, no audio data)
-  if (req.url === '/debug/rooms') {
+  if (pathname === '/debug/rooms') {
     const roomData = {};
     for (const [roomId, clients] of rooms.entries()) {
       roomData[roomId] = {
         count: clients.size,
+        hasLayout: roomLayouts.has(roomId),
         users: [...clients].map(c => ({
           userId: c.userId,
           role: c.role,
@@ -56,7 +81,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Serve companion client files
-  let filePath = path.join(COMPANION_DIR, req.url === '/' ? 'index.html' : req.url);
+  let filePath = path.join(COMPANION_DIR, pathname === '/' ? 'index.html' : pathname);
   const extname = path.extname(filePath);
   const contentTypeMap = {
     '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
@@ -183,10 +208,37 @@ wss.on('connection', (ws, req) => {
           log('ROOM JOIN', `conn#${connId}`, `user=${userId} role=${role} room=${roomId} total=${rooms.get(roomId).size}`);
 
           const users = getRoomUsers(roomId);
-          ws.send(JSON.stringify({ type: 'joined', roomId, userId, role, users }));
+          const currentLayout = roomLayouts.get(roomId) || null;
+
+          ws.send(JSON.stringify({
+            type: 'joined',
+            roomId,
+            userId,
+            role,
+            users,
+            layout: currentLayout,
+          }));
 
           const notified = broadcastToRoom(roomId, { type: 'room_users', roomId, users }, ws);
           log('ROOM BROADCAST', `room=${roomId}`, `event=room_users targets=${notified}`);
+          break;
+        }
+
+        case 'layout_update': {
+          if (!roomId) {
+            log('LAYOUT ERROR', `conn#${connId}`, 'not in a room');
+            return;
+          }
+          if (Array.isArray(data.avatars)) {
+            roomLayouts.set(roomId, data.avatars);
+            log('LAYOUT UPDATE', `conn#${connId}`, `room=${roomId} avatars=${data.avatars.length}`);
+            const targets = broadcastToRoom(roomId, {
+              type: 'layout_update',
+              roomId,
+              avatars: data.avatars,
+            }, ws);
+            log('ROOM BROADCAST', `room=${roomId}`, `event=layout_update targets=${targets}`);
+          }
           break;
         }
 
@@ -195,6 +247,7 @@ wss.on('connection', (ws, req) => {
             log('VOICE EVENT ERROR', `conn#${connId}`, 'not in a room');
             return;
           }
+          const speakingUser = String(data.userId || userId).trim();
           const speakingState = Boolean(data.speaking);
           const client = findClient(roomId, ws);
           if (client) {
@@ -202,11 +255,11 @@ wss.on('connection', (ws, req) => {
             client.lastVoiceActivity = Date.now();
           }
 
-          log('VOICE EVENT', `conn#${connId}`, `room=${roomId} user=${userId} speaking=${speakingState}`);
+          log('VOICE EVENT', `conn#${connId}`, `room=${roomId} user=${speakingUser} speaking=${speakingState}`);
 
-          const payload = { type: 'speaking', roomId, userId, speaking: speakingState };
+          const payload = { type: 'speaking', roomId, userId: speakingUser, speaking: speakingState };
           const targets = broadcastToRoom(roomId, payload, ws);
-          log('ROOM BROADCAST', `room=${roomId}`, `event=speaking user=${userId} speaking=${speakingState} targets=${targets}`);
+          log('ROOM BROADCAST', `room=${roomId}`, `event=speaking user=${speakingUser} speaking=${speakingState} targets=${targets}`);
           break;
         }
 
@@ -216,7 +269,6 @@ wss.on('connection', (ws, req) => {
           if (client) {
             client.lastVoiceActivity = Date.now();
             const heartbeatSpeaking = Boolean(data.speaking);
-            // If heartbeat indicates a state change (e.g. forced silent from visibility change), broadcast it
             if (client.speaking !== heartbeatSpeaking) {
               client.speaking = heartbeatSpeaking;
               log('VOICE HEARTBEAT SYNC', `conn#${connId}`, `user=${userId} speaking=${heartbeatSpeaking}`);
@@ -273,9 +325,6 @@ wss.on('connection', (ws, req) => {
 });
 
 // ── Voice Speaking Safety Timeout Interval (Every 1000ms) ───────────────────
-// If a client is marked as speaking:true but sends no voice heartbeat/speaking updates
-// for > 3500ms (e.g. browser minimized, tab backgrounded, throttled timers, lost network),
-// automatically force speaking:false and broadcast to all overlays.
 const voiceSafetyTimeoutInterval = setInterval(() => {
   const now = Date.now();
   for (const [roomId, clients] of rooms.entries()) {
@@ -318,5 +367,6 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 WebSocket: ws://0.0.0.0:${PORT}`);
   console.log(`🌐 Web Companion: http://0.0.0.0:${PORT}`);
   console.log(`❤️  Health: http://0.0.0.0:${PORT}/health`);
+  console.log(`📋 Layout API: http://0.0.0.0:${PORT}/api/layout?roomId=ANTIC-STREAM-01`);
   console.log(`🔍 Debug rooms: http://0.0.0.0:${PORT}/debug/rooms`);
 });

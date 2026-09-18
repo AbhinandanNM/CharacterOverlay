@@ -20,9 +20,6 @@ interface ControlPanelProps {
   remoteSpeaking: Record<string, boolean>;
   devTestSpeaking: Record<string, boolean>;
   debugInfo?: RemoteVoiceDebugInfo;
-  isObsOverlayOpen?: boolean;
-  onOpenObsOverlay?: () => void;
-  onCloseObsOverlay?: () => void;
   onSetServerUrl: (url: string) => void;
   onSetRoomId: (id: string) => void;
   onConnectNetwork: () => void;
@@ -59,9 +56,6 @@ export function ControlPanel({
   remoteSpeaking,
   devTestSpeaking,
   debugInfo,
-  isObsOverlayOpen,
-  onOpenObsOverlay,
-  onCloseObsOverlay,
   onSetServerUrl,
   onSetRoomId,
   onConnectNetwork,
@@ -119,6 +113,8 @@ export function ControlPanel({
     window.addEventListener('mouseup', onMouseUp);
   };
 
+  const [copiedObsUrl, setCopiedObsUrl] = useState(false);
+
   return (
     <>
       <div style={{ ...panelStyle, left: panelPos.x, top: panelPos.y }}>
@@ -143,38 +139,46 @@ export function ControlPanel({
           </button>
         </div>
 
-        {/* ── Dedicated OBS Overlay Trigger ───────────────────── */}
-        <div style={{ marginBottom: 10 }}>
+        {/* ── Dedicated OBS Browser Source Card ───────────────── */}
+        <div style={{
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(99, 179, 237, 0.25)',
+          borderRadius: 8,
+          padding: '8px 10px',
+          marginBottom: 10,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 10, fontWeight: 'bold', color: '#63b3ed', letterSpacing: 0.8 }}>
+              🎬 OBS BROWSER SOURCE
+            </span>
+            <span style={{ fontSize: 9, color: '#68d391', background: 'rgba(72,187,120,0.15)', padding: '1px 5px', borderRadius: 4 }}>
+              Zero Desktop Clutter
+            </span>
+          </div>
+          <div style={{ fontSize: 9, color: '#a0aec0', marginBottom: 6, lineHeight: 1.3 }}>
+            Add as <strong>Browser Source</strong> in OBS. Avatars render in stream only, keeping your physical desktop 100% clean!
+          </div>
           <button
-            onClick={isObsOverlayOpen ? onCloseObsOverlay : onOpenObsOverlay}
+            onClick={() => {
+              const obsUrl = `http://localhost:5173/?overlay=true&roomId=${encodeURIComponent(roomId || 'ANTIC-STREAM-01')}`;
+              navigator.clipboard.writeText(obsUrl);
+              setCopiedObsUrl(true);
+              setTimeout(() => setCopiedObsUrl(false), 2500);
+            }}
             style={{
               width: '100%',
-              padding: '8px 10px',
-              borderRadius: 8,
-              border: isObsOverlayOpen
-                ? '1px solid rgba(239,68,68,0.4)'
-                : '1px solid rgba(99,179,237,0.4)',
-              background: isObsOverlayOpen
-                ? 'rgba(239,68,68,0.15)'
-                : 'linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.25))',
-              color: isObsOverlayOpen ? '#fc8181' : '#90cdf4',
-              cursor: 'pointer',
-              fontSize: 11,
+              padding: '6px 0',
+              borderRadius: 6,
+              border: 'none',
+              background: copiedObsUrl ? '#38a169' : 'linear-gradient(135deg, #3b82f6, #6366f1)',
+              color: 'white',
+              fontSize: 10,
               fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              transition: 'all 0.15s ease',
+              cursor: 'pointer',
+              transition: 'background 0.2s',
             }}
           >
-            <span>{isObsOverlayOpen ? '❌' : '🎬'}</span>
-            <span>{isObsOverlayOpen ? 'CLOSE OBS OVERLAY' : 'OPEN OBS OVERLAY'}</span>
-            {isObsOverlayOpen && (
-              <span style={{ fontSize: 9, background: '#38a169', color: 'white', padding: '1px 5px', borderRadius: 10 }}>
-                ACTIVE
-              </span>
-            )}
+            {copiedObsUrl ? 'COPIED TO CLIPBOARD ✓' : '📋 COPY OBS BROWSER URL'}
           </button>
         </div>
 
