@@ -1,17 +1,84 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
+import { AvatarOverlay } from "./components/AvatarOverlay";
 import { AvatarStage } from "./components/AvatarStage";
 import { ControlPanel } from "./components/ControlPanel";
 import { useAvatarStore } from "./hooks/useAvatarStore";
 import { useMicrophone } from "./hooks/useMicrophone";
 import { useRemoteVoice } from "./hooks/useRemoteVoice";
 
+function isOverlayRoute(): boolean {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("overlay") === "true" || window.location.hash.includes("overlay");
+  } catch {
+    return false;
+  }
+}
+
 function App() {
+  const isOverlay = isOverlayRoute();
+
+  // If this is the dedicated OBS Overlay window, render AvatarOverlay directly
+  if (isOverlay) {
+    return <AvatarOverlay />;
+  }
+
+  return <EditorApp />;
+}
+
+function EditorApp() {
   const store = useAvatarStore();
   const remote = useRemoteVoice();
 
   const [localSpeaking, setLocalSpeaking] = useState(false);
+  const [isObsOverlayOpen, setIsObsOverlayOpen] = useState(false);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
 
+  // Initialize BroadcastChannel for real-time synchronization with dedicated OBS Overlay
+  useEffect(() => {
+    const channel = new BroadcastChannel("reactive-avatars-sync");
+    syncChannelRef.current = channel;
+
+    channel.onmessage = (event) => {
+      const data = event.data;
+      if (data?.type === "REQUEST_INITIAL_STATE") {
+        channel.postMessage({
+          type: "AVATARS_UPDATE",
+          avatars: store.avatars,
+        });
+      }
+    };
+
+    // Check initial OBS overlay status if in Electron
+    const api = (window as any).electronAPI;
+    if (api?.getObsOverlayStatus) {
+      api.getObsOverlayStatus().then((open: boolean) => setIsObsOverlayOpen(Boolean(open)));
+    }
+    if (api?.onObsOverlayStatusChanged) {
+      const unsubscribe = api.onObsOverlayStatusChanged((open: boolean) => {
+        setIsObsOverlayOpen(Boolean(open));
+      });
+      return () => {
+        unsubscribe?.();
+        channel.close();
+      };
+    }
+
+    return () => {
+      channel.close();
+    };
+  }, []);
+
+  // Broadcast avatar layout updates to OBS overlay
+  useEffect(() => {
+    syncChannelRef.current?.postMessage({
+      type: "AVATARS_UPDATE",
+      avatars: store.avatars,
+    });
+  }, [store.avatars]);
+
+  // Global overlay toggle listeners
   useEffect(() => {
     const api = (window as any).electronAPI;
     if (api?.onToggleOverlayMode) {
@@ -78,6 +145,34 @@ function App() {
     return map;
   }, [store.avatars, localSpeaking, remote.remoteSpeaking, remote.devTestSpeaking]);
 
+  // Broadcast speaking updates to OBS overlay in real time
+  useEffect(() => {
+    syncChannelRef.current?.postMessage({
+      type: "SPEAKING_UPDATE",
+      speaking: compositeSpeaking,
+    });
+  }, [compositeSpeaking]);
+
+  const handleOpenObsOverlay = useCallback(() => {
+    const api = (window as any).electronAPI;
+    if (api?.openObsOverlay) {
+      api.openObsOverlay().then(() => setIsObsOverlayOpen(true));
+    } else {
+      // Fallback in web browser: open overlay URL in popup
+      window.open("/?overlay=true", "ReactiveAvatarsObsOverlay", "width=1920,height=1080,menubar=no,toolbar=no,location=no,status=no");
+      setIsObsOverlayOpen(true);
+    }
+  }, []);
+
+  const handleCloseObsOverlay = useCallback(() => {
+    const api = (window as any).electronAPI;
+    if (api?.closeObsOverlay) {
+      api.closeObsOverlay().then(() => setIsObsOverlayOpen(false));
+    } else {
+      setIsObsOverlayOpen(false);
+    }
+  }, []);
+
   return (
     <div className="app">
       <AvatarStage
@@ -104,6 +199,9 @@ function App() {
           remoteSpeaking={remote.remoteSpeaking}
           devTestSpeaking={remote.devTestSpeaking}
           debugInfo={remote.debugInfo}
+          isObsOverlayOpen={isObsOverlayOpen}
+          onOpenObsOverlay={handleOpenObsOverlay}
+          onCloseObsOverlay={handleCloseObsOverlay}
           onSetServerUrl={remote.setServerUrl}
           onSetRoomId={remote.setRoomId}
           onConnectNetwork={remote.connect}

@@ -20,6 +20,9 @@ interface ControlPanelProps {
   remoteSpeaking: Record<string, boolean>;
   devTestSpeaking: Record<string, boolean>;
   debugInfo?: RemoteVoiceDebugInfo;
+  isObsOverlayOpen?: boolean;
+  onOpenObsOverlay?: () => void;
+  onCloseObsOverlay?: () => void;
   onSetServerUrl: (url: string) => void;
   onSetRoomId: (id: string) => void;
   onConnectNetwork: () => void;
@@ -56,6 +59,9 @@ export function ControlPanel({
   remoteSpeaking,
   devTestSpeaking,
   debugInfo,
+  isObsOverlayOpen,
+  onOpenObsOverlay,
+  onCloseObsOverlay,
   onSetServerUrl,
   onSetRoomId,
   onConnectNetwork,
@@ -134,6 +140,41 @@ export function ControlPanel({
             }}
           >
             {isEdit ? '✏️ EDIT' : '▶ STREAM'}
+          </button>
+        </div>
+
+        {/* ── Dedicated OBS Overlay Trigger ───────────────────── */}
+        <div style={{ marginBottom: 10 }}>
+          <button
+            onClick={isObsOverlayOpen ? onCloseObsOverlay : onOpenObsOverlay}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: isObsOverlayOpen
+                ? '1px solid rgba(239,68,68,0.4)'
+                : '1px solid rgba(99,179,237,0.4)',
+              background: isObsOverlayOpen
+                ? 'rgba(239,68,68,0.15)'
+                : 'linear-gradient(135deg, rgba(59,130,246,0.25), rgba(99,102,241,0.25))',
+              color: isObsOverlayOpen ? '#fc8181' : '#90cdf4',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span>{isObsOverlayOpen ? '❌' : '🎬'}</span>
+            <span>{isObsOverlayOpen ? 'CLOSE OBS OVERLAY' : 'OPEN OBS OVERLAY'}</span>
+            {isObsOverlayOpen && (
+              <span style={{ fontSize: 9, background: '#38a169', color: 'white', padding: '1px 5px', borderRadius: 10 }}>
+                ACTIVE
+              </span>
+            )}
           </button>
         </div>
 
