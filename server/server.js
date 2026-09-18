@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
-const SERVER_VERSION = '2.2.0';
+const SERVER_VERSION = '2.4.0';
 const COMPANION_DIR = path.join(__dirname, '..', 'companion');
 const VOICE_SAFETY_TIMEOUT_MS = 3500; // Force speaking:false if no voice update/heartbeat for 3.5s
 

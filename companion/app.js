@@ -140,6 +140,8 @@ function startSilentMediaKeepalive() {
     silentAudioEl.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
     silentAudioEl.loop = true;
     silentAudioEl.volume = 0.01;
+    silentAudioEl.style.display = 'none';
+    document.body.appendChild(silentAudioEl);
   }
   silentAudioEl.play().catch(() => {});
 }
@@ -246,10 +248,17 @@ async function startMicrophoneStream() {
   analyser.smoothingTimeConstant = 0.4;
   analyserData = new Uint8Array(analyser.frequencyBinCount);
 
+  // Mute gain connects to destination to ensure the browser continuously pulls
+  // hardware audio buffers from the microphone even when the tab is minimized.
+  const muteGain = audioContext.createGain();
+  muteGain.gain.value = 0.0;
+
   const source = audioContext.createMediaStreamSource(mediaStream);
   source.connect(analyser);
+  analyser.connect(muteGain);
+  muteGain.connect(audioContext.destination);
 
-  // Keep AudioContext alive and active
+  // Keep AudioContext and tab media session alive and active
   startSilentMediaKeepalive();
   initVadWorker();
   vadWorker.postMessage('start');
