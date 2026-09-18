@@ -42,30 +42,61 @@ function App() {
 
   const handleVolumeChange = useCallback(
     (average: number) => {
-      store.avatars.forEach(avatar => {
-        // If avatar has no voiceUserId assigned, local mic drives it
-        if (!avatar.voiceUserId) {
-          store.setSpeaking(avatar.id, average > avatar.sensitivity);
-        }
-      });
+      // Find the avatar explicitly designated as the local user
+      const localAvatar = store.avatars.find(a => a.isLocalUser);
+
+      if (localAvatar) {
+        // Precisely targeted: only drive the local avatar
+        store.setSpeaking(localAvatar.id, average > localAvatar.sensitivity);
+      } else {
+        // Fallback (no local user set): drive all avatars without a voiceUserId
+        // This preserves the original behavior for setups that haven’t configured voice assignment yet
+        store.avatars.forEach(avatar => {
+          if (!avatar.voiceUserId) {
+            store.setSpeaking(avatar.id, average > avatar.sensitivity);
+          }
+        });
+      }
     },
     [store.avatars, store.setSpeaking]
   );
 
   const { volume, micStarted, startMicrophone } = useMicrophone(handleVolumeChange);
 
+  // Set which avatar is the local user (mutual exclusivity enforced)
+  const setLocalUser = useCallback(
+    (avatarId: string | null) => {
+      store.avatars.forEach(avatar => {
+        const shouldBeLocal = avatar.id === avatarId;
+        if (avatar.isLocalUser !== shouldBeLocal) {
+          store.updateAvatar(avatar.id, { isLocalUser: shouldBeLocal });
+        }
+      });
+    },
+    [store.avatars, store.updateAvatar]
+  );
+
   // Unified Speaking Map: Evaluates Local Mic + Remote WS Voice User + Dev Test Mode
   const compositeSpeaking = useMemo(() => {
     const map: Record<string, boolean> = {};
 
+    // Is there at least one avatar explicitly designated as the local user?
+    const hasLocalUserDesignated = store.avatars.some(a => a.isLocalUser);
+
     store.avatars.forEach(avatar => {
-      // 1. Dev test mode simulation
+      // 1. Dev test mode simulation — always wins if active
       if (remote.devTestSpeaking[avatar.id]) {
         map[avatar.id] = true;
         return;
       }
 
-      // 2. Remote WebSocket user assignment
+      // 2. Local avatar (isLocalUser flag) — driven by local microphone
+      if (avatar.isLocalUser) {
+        map[avatar.id] = Boolean(store.speaking[avatar.id]);
+        return;
+      }
+
+      // 3. Remote WebSocket user assignment — driven by matching voiceUserId
       if (avatar.voiceUserId) {
         const key = avatar.voiceUserId.toLowerCase();
         const isRemoteActive = Boolean(
@@ -75,8 +106,15 @@ function App() {
         return;
       }
 
-      // 3. Local microphone (if no remote user is mapped)
-      map[avatar.id] = Boolean(store.speaking[avatar.id]);
+      // 4. Fallback: if NO avatar has isLocalUser set, all unassigned avatars react to local mic
+      //    This preserves out-of-the-box behavior before voice assignment is configured.
+      if (!hasLocalUserDesignated) {
+        map[avatar.id] = Boolean(store.speaking[avatar.id]);
+        return;
+      }
+
+      // 5. Avatar has no local or remote assignment — stays silent
+      map[avatar.id] = false;
     });
 
     return map;
@@ -127,6 +165,7 @@ function App() {
           onSaveLayout={store.saveLayout}
           onResetLayout={store.resetLayout}
           onStartMicrophone={startMicrophone}
+          onSetLocalUser={setLocalUser}
         />
       )}
 

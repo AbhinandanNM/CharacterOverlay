@@ -36,6 +36,7 @@ interface ControlPanelProps {
   onSaveLayout: () => void;
   onResetLayout: () => void;
   onStartMicrophone: () => Promise<void>;
+  onSetLocalUser: (avatarId: string | null) => void;
 }
 
 export function ControlPanel({
@@ -68,6 +69,7 @@ export function ControlPanel({
   onSaveLayout,
   onResetLayout,
   onStartMicrophone,
+  onSetLocalUser,
 }: ControlPanelProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -262,15 +264,39 @@ export function ControlPanel({
           <>
             <SectionLabel>SELECTED: {selectedAvatar.name}</SectionLabel>
 
-            {/* Voice User Assignment */}
-            <InspectorRow label="Voice User">
+            {/* Voice Assignment */}
+            <InspectorRow label="Voice">
               <select
-                value={selectedAvatar.voiceUserId || ''}
-                onChange={e => onUpdateAvatar(selectedAvatar.id, { voiceUserId: e.target.value || undefined })}
+                value={
+                  selectedAvatar.isLocalUser
+                    ? '__local__'
+                    : selectedAvatar.voiceUserId || ''
+                }
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === '__local__') {
+                    // Mark as local user, clear any remote assignment
+                    onSetLocalUser(selectedAvatar.id);
+                    onUpdateAvatar(selectedAvatar.id, { voiceUserId: undefined });
+                  } else if (val === '') {
+                    // No assignment — clear both
+                    onSetLocalUser(null);
+                    onUpdateAvatar(selectedAvatar.id, { voiceUserId: undefined, isLocalUser: false });
+                  } else {
+                    // Assign to a remote voice user, clear local flag
+                    onUpdateAvatar(selectedAvatar.id, { voiceUserId: val, isLocalUser: false });
+                    // If this avatar was previously the local user, deassign it
+                    if (selectedAvatar.isLocalUser) onSetLocalUser(null);
+                  }
+                }}
                 style={{
                   flex: 1,
                   background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  border: selectedAvatar.isLocalUser
+                    ? '1px solid rgba(72,187,120,0.5)'
+                    : selectedAvatar.voiceUserId
+                    ? '1px solid rgba(99,179,237,0.4)'
+                    : '1px solid rgba(255,255,255,0.12)',
                   borderRadius: 6,
                   color: 'white',
                   padding: '3px 6px',
@@ -278,7 +304,8 @@ export function ControlPanel({
                   outline: 'none',
                 }}
               >
-                <option value="" style={{ background: '#141423' }}>[ Local Mic / None ]</option>
+                <option value="" style={{ background: '#141423' }}>[ Unassigned ]</option>
+                <option value="__local__" style={{ background: '#141423' }}>🎤 Local Mic (This Machine)</option>
                 {/* Dynamically list connected companions */}
                 {roomUsers
                   .filter(u => u.role !== 'overlay')
@@ -287,7 +314,7 @@ export function ControlPanel({
                       🟢 {u.userId} (Connected)
                     </option>
                   ))}
-                {/* Always provide defaults if not in list */}
+                {/* Always provide default presets if not in connected list */}
                 {['ANM', 'SOM', 'ATHARV']
                   .filter(preset => !roomUsers.some(u => u.userId.toUpperCase() === preset))
                   .map(preset => (

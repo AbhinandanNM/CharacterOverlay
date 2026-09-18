@@ -13,6 +13,7 @@ export interface AvatarConfig {
   visible: boolean;       // show/hide toggle
   sensitivity: number;    // microphone volume threshold 1–30
   voiceUserId?: string;   // assigned remote user ID (e.g. "som", "atharv")
+  isLocalUser?: boolean;  // true = this avatar is controlled by the local microphone
 }
 
 export interface RoomUser {
