@@ -55,6 +55,7 @@ export function AvatarOverlay() {
         .then(data => {
           if (data?.layout && Array.isArray(data.layout) && data.layout.length > 0) {
             setAvatars(data.layout);
+            try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(data.layout)); } catch {}
             console.log('[OBS OVERLAY] Loaded initial layout from server API:', data.layout.length, 'avatars');
           }
         })
@@ -88,11 +89,13 @@ export function AvatarOverlay() {
             const msg = JSON.parse(event.data);
             if (!msg || typeof msg !== 'object') return;
 
-            if (msg.type === 'joined' && msg.layout && Array.isArray(msg.layout)) {
+            if (msg.type === 'joined' && msg.layout && Array.isArray(msg.layout) && msg.layout.length > 0) {
               setAvatars(msg.layout);
+              try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(msg.layout)); } catch {}
               console.log('[OBS OVERLAY] Layout received on join:', msg.layout.length, 'avatars');
-            } else if (msg.type === 'layout_update' && Array.isArray(msg.avatars)) {
+            } else if (msg.type === 'layout_update' && Array.isArray(msg.avatars) && msg.avatars.length > 0) {
               setAvatars(msg.avatars);
+              try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(msg.avatars)); } catch {}
               console.log('[OBS OVERLAY] Real-time layout update:', msg.avatars.length, 'avatars');
             } else if (msg.type === 'speaking' && msg.userId) {
               const u = String(msg.userId);

@@ -61,7 +61,7 @@ function EditorApp() {
       avatars: store.avatars,
     });
     remote.sendLayoutUpdate(store.avatars);
-  }, [store.avatars, remote.sendLayoutUpdate]);
+  }, [store.avatars, remote.connected, remote.sendLayoutUpdate]);
 
   // Global overlay toggle listeners
   useEffect(() => {
@@ -186,7 +186,17 @@ function EditorApp() {
           onSendBackward={store.sendBackward}
           onBringToFront={store.bringToFront}
           onSendToBack={store.sendToBack}
-          onSaveLayout={store.saveLayout}
+          onSaveLayout={() => {
+            store.saveLayout();
+            remote.sendLayoutUpdate(store.avatars);
+          }}
+          onSyncLayout={() => {
+            syncChannelRef.current?.postMessage({
+              type: "AVATARS_UPDATE",
+              avatars: store.avatars,
+            });
+            remote.sendLayoutUpdate(store.avatars);
+          }}
           onResetLayout={store.resetLayout}
           onStartMicrophone={startMicrophone}
           onSetLocalUser={setLocalUser}

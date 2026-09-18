@@ -37,6 +37,7 @@ interface ControlPanelProps {
   onBringToFront: (id: string) => void;
   onSendToBack: (id: string) => void;
   onSaveLayout: () => void;
+  onSyncLayout?: () => void;
   onResetLayout: () => void;
   onStartMicrophone: () => Promise<void>;
   onSetLocalUser: (avatarId: string | null) => void;
@@ -72,6 +73,7 @@ export function ControlPanel({
   onBringToFront,
   onSendToBack,
   onSaveLayout,
+  onSyncLayout,
   onResetLayout,
   onStartMicrophone,
   onSetLocalUser,
@@ -81,6 +83,7 @@ export function ControlPanel({
   const [panelPos, setPanelPos] = useState({ x: 20, y: 20 });
   const [showNetworkSettings, setShowNetworkSettings] = useState(false);
   const [showNetworkDebug, setShowNetworkDebug] = useState(true);
+  const [syncedObs, setSyncedObs] = useState(false);
 
   const selectedAvatar = avatars.find(a => a.id === selectedId) ?? null;
   const editingAvatar = avatars.find(a => a.id === editingId) ?? null;
@@ -176,9 +179,31 @@ export function ControlPanel({
               fontWeight: 'bold',
               cursor: 'pointer',
               transition: 'background 0.2s',
+              marginBottom: 5,
             }}
           >
             {copiedObsUrl ? 'COPIED TO CLIPBOARD ✓' : '📋 COPY OBS BROWSER URL'}
+          </button>
+          <button
+            onClick={() => {
+              if (onSyncLayout) onSyncLayout();
+              setSyncedObs(true);
+              setTimeout(() => setSyncedObs(false), 2000);
+            }}
+            style={{
+              width: '100%',
+              padding: '5px 0',
+              borderRadius: 6,
+              border: '1px solid rgba(99, 179, 237, 0.4)',
+              background: syncedObs ? 'rgba(72,187,120,0.25)' : 'rgba(255,255,255,0.06)',
+              color: syncedObs ? '#68d391' : '#90cdf4',
+              fontSize: 10,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            {syncedObs ? '✓ LAYOUT SYNCED TO OBS!' : '🔄 SYNC LAYOUT TO OBS'}
           </button>
         </div>
 

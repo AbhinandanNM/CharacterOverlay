@@ -105,6 +105,7 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
   });
 
   const wsRef = useRef<WebSocket | null>(null);
+  const layoutToPublishRef = useRef<import('../types/avatar').AvatarConfig[] | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualDisconnectRef = useRef(false);
   const connectionGenRef = useRef(0);
@@ -187,6 +188,15 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
           userId: 'OVERLAY-HOST',
           role: 'overlay',
         }));
+
+        // Automatically publish layout if available
+        if (layoutToPublishRef.current && layoutToPublishRef.current.length > 0) {
+          ws.send(JSON.stringify({
+            type: 'layout_update',
+            roomId: cleanRoom,
+            avatars: layoutToPublishRef.current,
+          }));
+        }
       };
 
       ws.onmessage = (event) => {
@@ -342,6 +352,7 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
   }, [roomId]);
 
   const sendLayoutUpdate = useCallback((avatars: import('../types/avatar').AvatarConfig[]) => {
+    layoutToPublishRef.current = avatars;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'layout_update',
