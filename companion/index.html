@@ -13,51 +13,63 @@
     }
 
     body {
-      background: #0d0d19;
+      background: #090a12;
       color: #f7fafc;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 24px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
 
     .card {
-      background: rgba(20, 20, 35, 0.95);
+      background: rgba(18, 20, 36, 0.95);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 18px;
-      padding: 28px;
-      width: 100%;
-      max-width: 420px;
+      padding: 24px;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
     }
 
     .header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
     .header-icon {
-      font-size: 28px;
+      font-size: 26px;
     }
 
     .header-title {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
       letter-spacing: 0.5px;
     }
 
     .header-subtitle {
-      font-size: 12px;
+      font-size: 11px;
       color: #a0aec0;
     }
 
     .field {
-      margin-bottom: 18px;
+      margin-bottom: 14px;
     }
 
     label {
@@ -65,19 +77,19 @@
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.8px;
       color: #a0aec0;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
 
     input, select {
       width: 100%;
-      padding: 10px 14px;
-      border-radius: 10px;
+      padding: 9px 12px;
+      border-radius: 9px;
       border: 1px solid rgba(255, 255, 255, 0.15);
       background: rgba(255, 255, 255, 0.06);
       color: white;
-      font-size: 14px;
+      font-size: 13px;
       outline: none;
       transition: border 0.15s;
     }
@@ -94,7 +106,7 @@
     .range-wrap {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     input[type="range"] {
@@ -106,10 +118,10 @@
 
     .btn {
       width: 100%;
-      padding: 12px;
-      border-radius: 10px;
+      padding: 11px;
+      border-radius: 9px;
       border: none;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       cursor: pointer;
       transition: all 0.2s;
@@ -129,7 +141,7 @@
       background: rgba(239, 68, 68, 0.2);
       border: 1px solid rgba(239, 68, 68, 0.4);
       color: #fc8181;
-      margin-top: 10px;
+      margin-top: 8px;
     }
 
     .status-badge {
@@ -141,7 +153,6 @@
       font-size: 12px;
       font-weight: 600;
       background: rgba(255, 255, 255, 0.05);
-      margin-bottom: 16px;
     }
 
     .dot {
@@ -156,17 +167,22 @@
       box-shadow: 0 0 8px #48bb78;
     }
 
-    .dot.speaking {
+    .dot.connecting {
       background: #ecc94b;
-      box-shadow: 0 0 10px #ecc94b;
+      box-shadow: 0 0 8px #ecc94b;
+    }
+
+    .dot.speaking {
+      background: #f6e05e;
+      box-shadow: 0 0 10px #f6e05e;
     }
 
     .meter-container {
-      margin-top: 16px;
-      padding: 14px;
-      border-radius: 12px;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .meter-bar-outer {
@@ -174,7 +190,7 @@
       background: rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       overflow: hidden;
-      margin-top: 8px;
+      margin-top: 6px;
       position: relative;
     }
 
@@ -182,7 +198,7 @@
       height: 100%;
       width: 0%;
       background: linear-gradient(90deg, #48bb78, #ecc94b, #f56565);
-      transition: width 0.06s ease;
+      transition: width 0.05s linear;
       border-radius: 6px;
     }
 
@@ -191,21 +207,22 @@
       top: 0;
       bottom: 0;
       width: 2px;
-      background: rgba(255, 255, 255, 0.8);
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 0 4px white;
     }
 
     .speaking-indicator {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 12px;
-      font-size: 13px;
+      margin-top: 10px;
+      font-size: 12px;
       font-weight: 700;
     }
 
     .speaking-pill {
-      padding: 4px 12px;
-      border-radius: 12px;
+      padding: 3px 10px;
+      border-radius: 10px;
       font-size: 11px;
       background: rgba(255, 255, 255, 0.08);
       color: #718096;
@@ -216,80 +233,242 @@
       color: white;
       box-shadow: 0 0 12px rgba(56, 161, 105, 0.6);
     }
+
+    /* Test buttons */
+    .test-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .btn-test {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-size: 11px;
+      font-weight: bold;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      transition: all 0.15s;
+    }
+
+    .btn-test:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-test-speak {
+      border-color: rgba(72, 187, 120, 0.4);
+      color: #68d391;
+    }
+
+    .btn-test-silent {
+      border-color: rgba(160, 174, 192, 0.4);
+      color: #a0aec0;
+    }
+
+    /* Debug section */
+    .debug-card {
+      background: #0e111a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 16px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .debug-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .debug-title {
+      font-weight: 700;
+      color: #63b3ed;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .debug-grid {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 4px 8px;
+      color: #cbd5e0;
+      line-height: 1.4;
+    }
+
+    .debug-label {
+      color: #718096;
+      font-weight: 600;
+    }
+
+    .debug-value {
+      color: #e2e8f0;
+      word-break: break-all;
+    }
+
+    .debug-value.ok { color: #68d391; }
+    .debug-value.warn { color: #ecc94b; }
+    .debug-value.err { color: #fc8181; }
+
+    .test-feedback {
+      font-size: 10px;
+      color: #68d391;
+      margin-top: 4px;
+      text-align: right;
+      height: 14px;
+    }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <div class="header">
-      <div class="header-icon">🎙️</div>
-      <div>
-        <div class="header-title">Voice Companion</div>
-        <div class="header-subtitle">Stream Avatar Microphone Link</div>
-      </div>
-    </div>
+  <div class="container">
+    <div class="card">
+      <div class="header">
+        <div class="header-left">
+          <div class="header-icon">🎙️</div>
+          <div>
+            <div class="header-title">Voice Companion</div>
+            <div class="header-subtitle">Stream Avatar Microphone Link</div>
+          </div>
+        </div>
 
-    <!-- Status -->
-    <div class="status-badge" id="statusBadge">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText">Disconnected</span>
-    </div>
-
-    <!-- Server URL -->
-    <div class="field">
-      <label>Server URL</label>
-      <input type="text" id="serverUrl" value="" placeholder="wss://your-app.onrender.com" />
-    </div>
-
-    <!-- Room ID -->
-    <div class="field">
-      <label>Room ID</label>
-      <input type="text" id="roomId" value="ANTIC-STREAM-01" placeholder="e.g. ANTIC-STREAM-01" />
-    </div>
-
-    <!-- User ID -->
-    <div class="field">
-      <label>Your User ID</label>
-      <input type="text" id="userId" value="SOM" placeholder="e.g. SOM or ATHARV" />
-    </div>
-
-    <!-- Microphone Selection -->
-    <div class="field">
-      <label>Microphone</label>
-      <select id="micSelect">
-        <option value="">Default Microphone</option>
-      </select>
-    </div>
-
-    <!-- Sensitivity Slider -->
-    <div class="field">
-      <div style="display:flex; justify-content:space-between;">
-        <label>Sensitivity</label>
-        <span style="font-size:12px; color:#68d391; font-weight:bold;" id="sensVal">15</span>
-      </div>
-      <div class="range-wrap">
-        <input type="range" id="sensSlider" min="1" max="40" value="15" />
-      </div>
-    </div>
-
-    <!-- Connect / Disconnect Buttons -->
-    <button class="btn btn-connect" id="connectBtn">🚀 Connect to Room</button>
-    <button class="btn btn-disconnect" id="disconnectBtn" style="display:none;">Disconnect</button>
-
-    <!-- Real-time Meter & Speaking Status -->
-    <div class="meter-container" id="meterSection" style="display:none;">
-      <div style="display:flex; justify-content:space-between; font-size:11px; color:#a0aec0;">
-        <span>Microphone Level</span>
-        <span id="volumeNumber">0</span>
-      </div>
-      <div class="meter-bar-outer">
-        <div class="meter-threshold" id="thresholdLine"></div>
-        <div class="meter-bar-inner" id="meterBar"></div>
+        <div class="status-badge" id="statusBadge">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">Disconnected</span>
+        </div>
       </div>
 
-      <div class="speaking-indicator">
-        <span style="color:#a0aec0; font-size:12px;">Speaking State:</span>
-        <span class="speaking-pill" id="speakingPill">SILENT</span>
+      <!-- Server URL -->
+      <div class="field">
+        <label>Server URL</label>
+        <input type="text" id="serverUrl" value="" placeholder="wss://reactive-avatars.onrender.com" />
+      </div>
+
+      <!-- Room ID -->
+      <div class="field">
+        <label>Room ID</label>
+        <input type="text" id="roomId" value="ANTIC-STREAM-01" placeholder="e.g. ANTIC-STREAM-01" />
+      </div>
+
+      <!-- User ID -->
+      <div class="field">
+        <label>Your User ID</label>
+        <input type="text" id="userId" value="SOM" placeholder="e.g. SOM or ATHARV" />
+      </div>
+
+      <!-- Microphone Selection -->
+      <div class="field">
+        <label>Microphone</label>
+        <select id="micSelect">
+          <option value="">Default Microphone</option>
+        </select>
+      </div>
+
+      <!-- Sensitivity Slider -->
+      <div class="field">
+        <div style="display:flex; justify-content:space-between;">
+          <label>Sensitivity Threshold</label>
+          <span style="font-size:12px; color:#68d391; font-weight:bold;" id="sensVal">15</span>
+        </div>
+        <div class="range-wrap">
+          <input type="range" id="sensSlider" min="1" max="40" value="15" />
+        </div>
+      </div>
+
+      <!-- Connect / Disconnect Buttons -->
+      <button class="btn btn-connect" id="connectBtn">🚀 Connect to Room</button>
+      <button class="btn btn-disconnect" id="disconnectBtn" style="display:none;">Disconnect</button>
+
+      <!-- Real-time Meter & Speaking Status -->
+      <div class="meter-container" id="meterSection" style="display:none;">
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:#a0aec0;">
+          <span>Microphone Level</span>
+          <span id="volumeNumber">0</span>
+        </div>
+        <div class="meter-bar-outer">
+          <div class="meter-threshold" id="thresholdLine"></div>
+          <div class="meter-bar-inner" id="meterBar"></div>
+        </div>
+
+        <div class="speaking-indicator">
+          <span style="color:#a0aec0; font-size:12px;">Speaking State:</span>
+          <span class="speaking-pill" id="speakingPill">SILENT</span>
+        </div>
+      </div>
+
+      <!-- Test Injection Buttons -->
+      <div class="test-actions">
+        <button class="btn-test btn-test-speak" id="testSpeakBtn">🧪 SEND TEST SPEAKING</button>
+        <button class="btn-test btn-test-silent" id="testSilentBtn">🧪 SEND TEST SILENT</button>
+      </div>
+      <div class="test-feedback" id="testFeedback"></div>
+    </div>
+
+    <!-- Live Debug Section -->
+    <div class="debug-card">
+      <div class="debug-header" id="debugToggle">
+        <div class="debug-title">
+          <span>🔍 DIAGNOSTIC DEBUG PANEL</span>
+        </div>
+        <span style="color:#718096; font-size:11px;" id="debugArrow">▼</span>
+      </div>
+
+      <div class="debug-grid" id="debugGrid">
+        <div class="debug-label">Connection:</div>
+        <div class="debug-value" id="dbgConnection">🔴 DISCONNECTED</div>
+
+        <div class="debug-label">WS readyState:</div>
+        <div class="debug-value" id="dbgReadyState">3 CLOSED</div>
+
+        <div class="debug-label">Server URL:</div>
+        <div class="debug-value" id="dbgServerUrl">-</div>
+
+        <div class="debug-label">Room / User:</div>
+        <div class="debug-value" id="dbgRoomUser">-</div>
+
+        <div class="debug-label">Last WS Event:</div>
+        <div class="debug-value" id="dbgLastEvent">-</div>
+
+        <div class="debug-label">Last WS Msg In:</div>
+        <div class="debug-value" id="dbgLastMsgIn">-</div>
+
+        <div class="debug-label">Last WS Msg Out:</div>
+        <div class="debug-value" id="dbgLastMsgOut">-</div>
+
+        <div class="debug-label">Last Error:</div>
+        <div class="debug-value err" id="dbgLastError">None</div>
+
+        <div class="debug-label">Reconnect Tries:</div>
+        <div class="debug-value" id="dbgReconnects">0</div>
+
+        <div class="debug-label">Last Close Code:</div>
+        <div class="debug-value" id="dbgCloseCode">-</div>
+
+        <div class="debug-label">Last Close Reason:</div>
+        <div class="debug-value" id="dbgCloseReason">-</div>
+
+        <div class="debug-label">Mic Device:</div>
+        <div class="debug-value" id="dbgMicDevice">Default</div>
+
+        <div class="debug-label">Mic Permission:</div>
+        <div class="debug-value" id="dbgMicPerm">UNKNOWN</div>
+
+        <div class="debug-label">AudioContext:</div>
+        <div class="debug-value" id="dbgAudioCtx">NOT INITIALIZED</div>
+
+        <div class="debug-label">Mic Level / Thresh:</div>
+        <div class="debug-value" id="dbgMicLevel">0 / 15</div>
+
+        <div class="debug-label">VAD Transition:</div>
+        <div class="debug-value" id="dbgVadTransition">-</div>
       </div>
     </div>
   </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AppMode, AvatarConfig } from '../types/avatar';
+import type { RemoteVoiceDebugInfo } from '../hooks/useRemoteVoice';
 import { AvatarLibrary } from './AvatarLibrary';
 import { AddAvatarModal } from './AddAvatarModal';
 import { EditAvatarModal } from './EditAvatarModal';
@@ -16,7 +17,9 @@ interface ControlPanelProps {
   serverUrl: string;
   roomId: string;
   roomUsers: import('../types/avatar').RoomUser[];
+  remoteSpeaking: Record<string, boolean>;
   devTestSpeaking: Record<string, boolean>;
+  debugInfo?: RemoteVoiceDebugInfo;
   onSetServerUrl: (url: string) => void;
   onSetRoomId: (id: string) => void;
   onConnectNetwork: () => void;
@@ -50,7 +53,9 @@ export function ControlPanel({
   serverUrl,
   roomId,
   roomUsers,
+  remoteSpeaking,
   devTestSpeaking,
+  debugInfo,
   onSetServerUrl,
   onSetRoomId,
   onConnectNetwork,
@@ -75,6 +80,7 @@ export function ControlPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [panelPos, setPanelPos] = useState({ x: 20, y: 20 });
   const [showNetworkSettings, setShowNetworkSettings] = useState(false);
+  const [showNetworkDebug, setShowNetworkDebug] = useState(true);
 
   const selectedAvatar = avatars.find(a => a.id === selectedId) ?? null;
   const editingAvatar = avatars.find(a => a.id === editingId) ?? null;
@@ -237,6 +243,109 @@ export function ControlPanel({
             ))}
           </div>
         )}
+
+        {/* ── Network Debug Panel ───────────────────────────── */}
+        <div style={{ marginTop: 6, marginBottom: 8 }}>
+          <div
+            onClick={() => setShowNetworkDebug(!showNetworkDebug)}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: 'pointer',
+              userSelect: 'none',
+              padding: '3px 0',
+            }}
+          >
+            <span style={{ fontSize: 10, fontWeight: 'bold', color: '#63b3ed', letterSpacing: 1 }}>
+              🌐 NETWORK DEBUG
+            </span>
+            <span style={{ fontSize: 10, color: '#718096' }}>
+              {showNetworkDebug ? '▼' : '▶'}
+            </span>
+          </div>
+
+          {showNetworkDebug && (
+            <div style={{
+              background: '#0a0d17',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 10,
+              fontFamily: 'monospace',
+              color: '#cbd5e0',
+              lineHeight: 1.5,
+              marginTop: 4,
+            }}>
+              <div><strong style={{ color: '#718096' }}>Status: </strong><span style={{ color: connected ? '#68d391' : '#fc8181', fontWeight: 'bold' }}>{connected ? 'CONNECTED' : 'DISCONNECTED'}</span></div>
+              <div><strong style={{ color: '#718096' }}>Room: </strong><span>{roomId || '-'}</span></div>
+              <div>
+                <strong style={{ color: '#718096' }}>Users: </strong>
+                <span>{roomUsers.length ? roomUsers.map(u => u.userId).join(', ') : 'None'}</span>
+              </div>
+              <div>
+                <strong style={{ color: '#718096' }}>Remote Map: </strong>
+                <span>
+                  {Object.keys(remoteSpeaking).length === 0
+                    ? 'None'
+                    : Object.entries(remoteSpeaking)
+                        .filter(([k]) => k === k.toUpperCase()) // show unique normalized
+                        .map(([k, v]) => `${k} → ${v ? 'TALKING' : 'idle'}`)
+                        .join(', ')}
+                </span>
+              </div>
+              <div>
+                <strong style={{ color: '#718096' }}>Last Voice: </strong>
+                <span>
+                  {debugInfo?.lastRemoteVoiceEvent
+                    ? `${debugInfo.lastRemoteVoiceEvent.userId} = ${debugInfo.lastRemoteVoiceEvent.speaking} (${debugInfo.lastRemoteVoiceEvent.time})`
+                    : 'None yet'}
+                </span>
+              </div>
+              <div>
+                <strong style={{ color: '#718096' }}>Last WS Msg: </strong>
+                <span>{debugInfo?.lastMessage || '-'}</span>
+              </div>
+              <div>
+                <strong style={{ color: '#718096' }}>WS State: </strong>
+                <span>
+                  {debugInfo?.readyState === 1 ? '1 OPEN' : debugInfo?.readyState === 0 ? '0 CONNECTING' : '3 CLOSED'}
+                </span>
+              </div>
+              {debugInfo?.lastCloseCode !== null && debugInfo?.lastCloseCode !== undefined && (
+                <div>
+                  <strong style={{ color: '#718096' }}>Last Disconnect: </strong>
+                  <span style={{ color: '#fc8181' }}>
+                    {debugInfo.lastCloseCode} {debugInfo.lastCloseReason ? `(${debugInfo.lastCloseReason})` : ''}
+                  </span>
+                </div>
+              )}
+              <div>
+                <strong style={{ color: '#718096' }}>Reconnects: </strong>
+                <span>{debugInfo?.reconnectAttempts || 0}</span>
+              </div>
+
+              {/* Pipeline Status */}
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ color: '#a0aec0', fontWeight: 'bold', marginBottom: 2 }}>REMOTE PIPELINE:</div>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', fontSize: 9 }}>
+                  <span style={{ padding: '1px 4px', borderRadius: 3, background: 'rgba(72,187,120,0.15)', color: '#68d391' }}>MIC ✅</span>
+                  <span style={{ padding: '1px 4px', borderRadius: 3, background: 'rgba(72,187,120,0.15)', color: '#68d391' }}>VAD ✅</span>
+                  <span style={{ padding: '1px 4px', borderRadius: 3, background: 'rgba(72,187,120,0.15)', color: '#68d391' }}>WS SEND ✅</span>
+                  <span style={{ padding: '1px 4px', borderRadius: 3, background: debugInfo?.pipeline.server ? 'rgba(72,187,120,0.15)' : 'rgba(237,137,54,0.15)', color: debugInfo?.pipeline.server ? '#68d391' : '#f6ad55' }}>
+                    SERVER {debugInfo?.pipeline.server ? '✅' : '❓'}
+                  </span>
+                  <span style={{ padding: '1px 4px', borderRadius: 3, background: debugInfo?.pipeline.wsRecv ? 'rgba(72,187,120,0.15)' : 'rgba(237,137,54,0.15)', color: debugInfo?.pipeline.wsRecv ? '#68d391' : '#f6ad55' }}>
+                    WS RECV {debugInfo?.pipeline.wsRecv ? '✅' : '❓'}
+                  </span>
+                  <span style={{ padding: '1px 4px', borderRadius: 3, background: debugInfo?.pipeline.overlay ? 'rgba(72,187,120,0.15)' : 'rgba(237,137,54,0.15)', color: debugInfo?.pipeline.overlay ? '#68d391' : 'rgba(255,255,255,0.4)' }}>
+                    OVERLAY {debugInfo?.pipeline.overlay ? '✅' : '❓'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         <Divider />
 

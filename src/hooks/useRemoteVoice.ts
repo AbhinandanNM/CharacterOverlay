@@ -2,6 +2,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RoomUser } from '../types/avatar';
 import { NETWORK_STORAGE_KEY } from '../types/avatar';
 
+export interface RemoteVoiceDebugInfo {
+  readyState: number;
+  lastEvent: string;
+  lastMessage: string;
+  lastError: string;
+  reconnectAttempts: number;
+  lastCloseCode: number | null;
+  lastCloseReason: string;
+  lastRemoteVoiceEvent: { userId: string; speaking: boolean; time: string } | null;
+  pipeline: {
+    mic: boolean;
+    vad: boolean;
+    wsSend: boolean;
+    server: boolean;
+    wsRecv: boolean;
+    overlay: boolean;
+  };
+}
+
 interface UseRemoteVoiceResult {
   connected: boolean;
   statusText: string;
@@ -10,6 +29,7 @@ interface UseRemoteVoiceResult {
   roomUsers: RoomUser[];
   remoteSpeaking: Record<string, boolean>;
   devTestSpeaking: Record<string, boolean>;
+  debugInfo: RemoteVoiceDebugInfo;
   setServerUrl: (url: string) => void;
   setRoomId: (roomId: string) => void;
   connect: () => void;
@@ -22,6 +42,22 @@ interface StoredNetworkConfig {
   roomId: string;
 }
 
+function ts(): string {
+  const d = new Date();
+  return d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+
+const CLOSE_CODE_EXPLANATIONS: Record<number, string> = {
+  1000: 'Normal Closure',
+  1001: 'Going Away',
+  1002: 'Protocol Error',
+  1003: 'Unsupported Data',
+  1005: 'No Status Received',
+  1006: 'Abnormal Closure (Server/Network dropped connection without close frame)',
+  1008: 'Policy Violation',
+  1011: 'Server Error',
+};
+
 function getStoredNetworkConfig(): StoredNetworkConfig {
   try {
     const raw = localStorage.getItem(NETWORK_STORAGE_KEY);
@@ -31,7 +67,7 @@ function getStoredNetworkConfig(): StoredNetworkConfig {
     }
   } catch {}
   return {
-    serverUrl: 'ws://localhost:8080',
+    serverUrl: 'wss://reactive-avatars.onrender.com',
     roomId: 'ANTIC-STREAM-01',
   };
 }
@@ -47,9 +83,29 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
   const [remoteSpeaking, setRemoteSpeaking] = useState<Record<string, boolean>>({});
   const [devTestSpeaking, setDevTestSpeaking] = useState<Record<string, boolean>>({});
 
+  const [debugInfo, setDebugInfo] = useState<RemoteVoiceDebugInfo>({
+    readyState: 3, // CLOSED
+    lastEvent: 'Init',
+    lastMessage: '-',
+    lastError: 'None',
+    reconnectAttempts: 0,
+    lastCloseCode: null,
+    lastCloseReason: '',
+    lastRemoteVoiceEvent: null,
+    pipeline: {
+      mic: true,
+      vad: true,
+      wsSend: true,
+      server: false,
+      wsRecv: false,
+      overlay: false,
+    },
+  });
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualDisconnectRef = useRef(false);
+  const connectionGenRef = useRef(0);
 
   const setServerUrl = useCallback((url: string) => {
     setServerUrlState(url);
@@ -69,16 +125,6 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
   }, [serverUrl]);
 
   const connect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
     manualDisconnectRef.current = false;
     const cleanUrl = serverUrl.trim();
     const cleanRoom = roomId.trim().toUpperCase();
@@ -88,14 +134,49 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
       return;
     }
 
+    // 1. Safely teardown old socket
+    if (wsRef.current) {
+      try {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      } catch (e) {}
+      wsRef.current = null;
+    }
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    // 2. Increment generation token
+    const gen = ++connectionGenRef.current;
+
     setStatusText('Connecting...');
+    setDebugInfo(prev => ({
+      ...prev,
+      readyState: 0,
+      lastEvent: `${ts()} CONNECTING (gen #${gen})`,
+    }));
+
     try {
       const ws = new WebSocket(cleanUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (gen !== connectionGenRef.current) return;
         setConnected(true);
         setStatusText(`Connected: ${cleanRoom}`);
+        setDebugInfo(prev => ({
+          ...prev,
+          readyState: 1,
+          reconnectAttempts: 0,
+          lastEvent: `${ts()} OPEN`,
+          lastError: 'None',
+          pipeline: { ...prev.pipeline, server: true },
+        }));
 
         // Join as overlay
         ws.send(JSON.stringify({
@@ -107,9 +188,16 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
       };
 
       ws.onmessage = (event) => {
+        if (gen !== connectionGenRef.current) return;
         try {
           const msg = JSON.parse(event.data);
           if (!msg || typeof msg !== 'object') return;
+
+          setDebugInfo(prev => ({
+            ...prev,
+            lastMessage: `${ts()} [type=${msg.type || '?'}]`,
+            pipeline: { ...prev.pipeline, wsRecv: true },
+          }));
 
           switch (msg.type) {
             case 'room_users':
@@ -123,13 +211,23 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
             case 'speaking': {
               const { userId, speaking } = msg;
               if (userId) {
-                // Normalize userId to lowercase for case-insensitive matching
+                const isSpk = Boolean(speaking);
                 setRemoteSpeaking(prev => ({
                   ...prev,
-                  [userId.toLowerCase()]: Boolean(speaking),
-                  [userId]: Boolean(speaking),
+                  [userId.toLowerCase()]: isSpk,
+                  [userId]: isSpk,
+                }));
+                setDebugInfo(prev => ({
+                  ...prev,
+                  lastRemoteVoiceEvent: { userId, speaking: isSpk, time: ts() },
+                  pipeline: { ...prev.pipeline, wsRecv: true, overlay: true },
                 }));
               }
+              break;
+            }
+
+            case 'ping': {
+              ws.send(JSON.stringify({ type: 'pong', time: ts() }));
               break;
             }
 
@@ -141,31 +239,58 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
+        if (gen !== connectionGenRef.current) return;
+        const code = ev.code;
+        const reason = ev.reason || CLOSE_CODE_EXPLANATIONS[code] || '';
+
         setConnected(false);
         setRoomUsers([]);
         setRemoteSpeaking({});
         wsRef.current = null;
 
+        setDebugInfo(prev => ({
+          ...prev,
+          readyState: 3,
+          lastEvent: `${ts()} CLOSED (code=${code})`,
+          lastCloseCode: code,
+          lastCloseReason: reason,
+          pipeline: { ...prev.pipeline, server: false, wsRecv: false },
+        }));
+
         if (!manualDisconnectRef.current) {
-          setStatusText('Disconnected (Retrying...)');
-          // Auto reconnect after 3 seconds
+          setDebugInfo(prev => ({ ...prev, reconnectAttempts: prev.reconnectAttempts + 1 }));
+          setStatusText(`Disconnected (Retrying... #${debugInfo.reconnectAttempts + 1})`);
           reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
+            if (!manualDisconnectRef.current) {
+              connect();
+            }
           }, 3000);
         } else {
           setStatusText('Disconnected');
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (err: any) => {
+        if (gen !== connectionGenRef.current) return;
+        const msg = err?.message || 'WebSocket Error';
         setStatusText('Connection Error');
+        setDebugInfo(prev => ({
+          ...prev,
+          lastEvent: `${ts()} ERROR`,
+          lastError: msg,
+        }));
       };
-    } catch (e) {
+    } catch (e: any) {
       setStatusText('Invalid URL');
       setConnected(false);
+      setDebugInfo(prev => ({
+        ...prev,
+        readyState: 3,
+        lastError: e?.message || 'Invalid URL',
+      }));
     }
-  }, [serverUrl, roomId]);
+  }, [serverUrl, roomId, debugInfo.reconnectAttempts]);
 
   const disconnect = useCallback(() => {
     manualDisconnectRef.current = true;
@@ -174,13 +299,21 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
       reconnectTimeoutRef.current = null;
     }
     if (wsRef.current) {
-      wsRef.current.close();
+      try {
+        wsRef.current.close(1000, 'User initiated disconnect');
+      } catch (e) {}
       wsRef.current = null;
     }
     setConnected(false);
     setStatusText('Disconnected');
     setRoomUsers([]);
     setRemoteSpeaking({});
+    setDebugInfo(prev => ({
+      ...prev,
+      readyState: 3,
+      lastEvent: `${ts()} DISCONNECTED (manual)`,
+      pipeline: { ...prev.pipeline, server: false, wsRecv: false, overlay: false },
+    }));
   }, []);
 
   const toggleDevTestSpeaking = useCallback((avatarId: string) => {
@@ -207,6 +340,7 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
     roomUsers,
     remoteSpeaking,
     devTestSpeaking,
+    debugInfo,
     setServerUrl,
     setRoomId,
     connect,

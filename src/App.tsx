@@ -101,7 +101,9 @@ function App() {
           serverUrl={remote.serverUrl}
           roomId={remote.roomId}
           roomUsers={remote.roomUsers}
+          remoteSpeaking={remote.remoteSpeaking}
           devTestSpeaking={remote.devTestSpeaking}
+          debugInfo={remote.debugInfo}
           onSetServerUrl={remote.setServerUrl}
           onSetRoomId={remote.setRoomId}
           onConnectNetwork={remote.connect}
