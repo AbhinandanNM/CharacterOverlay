@@ -1,13 +1,17 @@
 # CharacterOverlay (Reactive Avatars) 🎭
 
-A lightweight, transparent voice-reactive avatar stream overlay and real-time visual editor built with **React**, **TypeScript**, **Vite**, and **Electron**.
+A lightweight, transparent voice-reactive avatar stream overlay, real-time visual editor, and **dedicated OBS Browser Source overlay** built with **React**, **TypeScript**, **Vite**, and **Electron**.
 
-Now featuring **Multi-Person Internet Voice-Reactivity** via cloud WebSockets — your friends across the internet can trigger their avatars in real-time by speaking into their own microphones!
+Featuring **Multi-Person Internet Voice-Reactivity** via cloud WebSockets and **Zero Desktop Clutter OBS Browser Source** — stream with animated reactive avatars while keeping your physical gaming monitor 100% clean!
 
 ---
 
 ## ✨ Features
 
+- **🎬 Dedicated OBS Browser Source Overlay (Zero Desktop Clutter)**:
+  - Add `http://localhost:5173/?overlay=true` directly into OBS Studio as a Browser Source.
+  - Avatars render inside your stream/recording without covering your screen or interfering with gameplay.
+  - Real-time layout and speaking synchronization over WebSockets with 1-click sync.
 - **🌐 Multi-Person Internet Voice-Reactivity**:
   - Connect friends worldwide over the internet without port forwarding or sharing IP addresses.
   - Dedicated **Friend Companion Web App** (works on any browser/phone).
