@@ -151,8 +151,24 @@ export function ControlPanel({
               />
             </InspectorRow>
 
+            {/* Quick Position Helpers */}
+            <div style={{ display: 'flex', gap: 4, marginTop: 6, marginBottom: 6 }}>
+              <SmallBtn
+                onClick={() => onUpdateAvatar(selectedAvatar.id, { x: 380, y: 150 })}
+                title="Center on overlay canvas"
+              >
+                🎯 Center
+              </SmallBtn>
+              <SmallBtn
+                onClick={() => onUpdateAvatar(selectedAvatar.id, { x: 100, y: 180, width: 240, height: 240, rotation: 0 })}
+                title="Reset this character's transform"
+              >
+                ↺ Reset Pos
+              </SmallBtn>
+            </div>
+
             {/* Layer controls */}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
               <SmallBtn onClick={() => onBringToFront(selectedAvatar.id)} title="Bring to Front">⬆⬆</SmallBtn>
               <SmallBtn onClick={() => onBringForward(selectedAvatar.id)} title="Bring Forward">⬆</SmallBtn>
               <SmallBtn onClick={() => onSendBackward(selectedAvatar.id)} title="Send Backward">⬇</SmallBtn>
@@ -277,8 +293,13 @@ function NumericInput({
   return (
     <input
       type="number"
-      value={value}
-      onChange={e => onChange(Number(e.target.value))}
+      value={Number.isNaN(value) ? '' : value}
+      onChange={e => {
+        const val = e.target.value === '' ? 0 : Number(e.target.value);
+        if (!Number.isNaN(val)) {
+          onChange(val);
+        }
+      }}
       style={{
         flex: 1,
         background: 'rgba(255,255,255,0.07)',
