@@ -1,6 +1,7 @@
-// Friend Companion Client Script — v2.3.0
-// Robust background-proof audio processing via Web Audio ScriptProcessorNode.
-// Runs continuously even when the browser is minimized, backgrounded, or running full-screen games.
+// Friend Companion Client Script — v2.4.0
+// Production background-proof audio engine using Web Worker 50Hz polling,
+// AnalyserNode, AudioContext auto-resume, and silent media keepalive.
+// Runs non-stop in the background when minimized, tab-switched, or playing full-screen games.
 
 let ws = null;
 let currentConnectionGeneration = 0;
@@ -10,10 +11,12 @@ let voiceHeartbeatTimer = null;
 let manualDisconnect = false;
 
 let audioContext = null;
-let scriptProcessor = null;
-let muteGain = null;
+let analyser = null;
+let analyserData = null;
 let mediaStream = null;
 let uiAnimFrameId = null;
+let vadWorker = null;
+let silentAudioEl = null;
 
 let isSpeaking = false;
 let latestVolume = 0;
@@ -126,6 +129,58 @@ function updateThresholdPosition() {
 sensSlider.addEventListener('input', updateThresholdPosition);
 updateThresholdPosition();
 
+// ── Silent Audio Media Keepalive ─────────────────────────────────
+// Playing a silent audio element marks this tab as an active media player in Chrome/Firefox/Edge,
+// which prevents the browser from throttling JavaScript, suspending AudioContext, or pausing Web Audio.
+function startSilentMediaKeepalive() {
+  if (!silentAudioEl) {
+    silentAudioEl = document.createElement('audio');
+    silentAudioEl.setAttribute('playsinline', '');
+    silentAudioEl.setAttribute('autoplay', '');
+    silentAudioEl.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    silentAudioEl.loop = true;
+    silentAudioEl.volume = 0.01;
+  }
+  silentAudioEl.play().catch(() => {});
+}
+
+function stopSilentMediaKeepalive() {
+  if (silentAudioEl) {
+    try {
+      silentAudioEl.pause();
+      silentAudioEl.currentTime = 0;
+    } catch (e) {}
+  }
+}
+
+// ── Unthrottled Background Web Worker ────────────────────────────
+// Web Workers are executed on a separate thread and are NOT throttled by Chrome when minimized.
+function initVadWorker() {
+  if (vadWorker) return;
+  const workerCode = `
+    let timer = null;
+    self.onmessage = function(e) {
+      if (e.data === 'start') {
+        if (timer) clearInterval(timer);
+        timer = setInterval(function() {
+          self.postMessage('tick');
+        }, 20); // 50 Hz unthrottled audio analysis
+      } else if (e.data === 'stop') {
+        if (timer) clearInterval(timer);
+        timer = null;
+      }
+    };
+  `;
+  const blob = new Blob([workerCode], { type: 'application/javascript' });
+  vadWorker = new Worker(URL.createObjectURL(blob));
+
+  vadWorker.onmessage = (e) => {
+    if (e.data === 'tick') {
+      processAudioFrame();
+    }
+  };
+}
+
 // Populate Audio Devices
 async function getAudioDevices() {
   try {
@@ -186,54 +241,60 @@ async function startMicrophoneStream() {
   dbgAudioCtx.textContent = audioContext.state.toUpperCase();
   dbgAudioCtx.className = audioContext.state === 'running' ? 'debug-value ok' : 'debug-value warn';
 
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.4;
+  analyserData = new Uint8Array(analyser.frequencyBinCount);
+
   const source = audioContext.createMediaStreamSource(mediaStream);
+  source.connect(analyser);
 
-  // ScriptProcessorNode runs on the Web Audio thread and NEVER pauses when minimized
-  scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
-
-  // Mute gain connected to destination keeps the audio rendering pipeline active without echoing
-  muteGain = audioContext.createGain();
-  muteGain.gain.value = 0;
-
-  source.connect(scriptProcessor);
-  scriptProcessor.connect(muteGain);
-  muteGain.connect(audioContext.destination);
-
-  // Continuous Audio Processing Loop (Active even when minimized)
-  scriptProcessor.onaudioprocess = (e) => {
-    const input = e.inputBuffer.getChannelData(0);
-    let sum = 0;
-    for (let i = 0; i < input.length; i++) {
-      sum += input[i] * input[i];
-    }
-    const rms = Math.sqrt(sum / input.length);
-    // Scale RMS (0.0 to 1.0) to a 0-100 scale
-    latestVolume = Math.min(100, Math.round(rms * 350));
-
-    const now = performance.now();
-    const threshold = Number(sensSlider.value);
-
-    // VAD Debouncing & Hysteresis Logic
-    if (latestVolume > threshold) {
-      lastAboveThresholdTime = now;
-      if (!isSpeaking) {
-        if (speechStartTime === 0) speechStartTime = now;
-        if (now - speechStartTime >= SPEECH_START_DELAY) {
-          sendSpeakingState(true);
-          speechStartTime = 0;
-        }
-      }
-    } else {
-      speechStartTime = 0;
-      if (isSpeaking) {
-        if (now - lastAboveThresholdTime >= SPEECH_END_DELAY) {
-          sendSpeakingState(false);
-        }
-      }
-    }
-  };
+  // Keep AudioContext alive and active
+  startSilentMediaKeepalive();
+  initVadWorker();
+  vadWorker.postMessage('start');
 
   startUIRefreshLoop();
+}
+
+function processAudioFrame() {
+  if (!analyser || !analyserData || !audioContext) return;
+
+  // Auto-resume if suspended by browser
+  if (audioContext.state === 'suspended') {
+    audioContext.resume().catch(() => {});
+  }
+
+  analyser.getByteFrequencyData(analyserData);
+
+  let sum = 0;
+  for (let i = 0; i < analyserData.length; i++) {
+    sum += analyserData[i];
+  }
+  const avg = sum / analyserData.length;
+  latestVolume = Math.round(avg);
+
+  const now = performance.now();
+  const threshold = Number(sensSlider.value);
+
+  // VAD Debouncing & Hysteresis Logic
+  if (latestVolume > threshold) {
+    lastAboveThresholdTime = now;
+    if (!isSpeaking) {
+      if (speechStartTime === 0) speechStartTime = now;
+      if (now - speechStartTime >= SPEECH_START_DELAY) {
+        sendSpeakingState(true);
+        speechStartTime = 0;
+      }
+    }
+  } else {
+    speechStartTime = 0;
+    if (isSpeaking) {
+      if (now - lastAboveThresholdTime >= SPEECH_END_DELAY) {
+        sendSpeakingState(false);
+      }
+    }
+  }
 }
 
 function startUIRefreshLoop() {
@@ -340,11 +401,10 @@ function sendVoiceHeartbeat(generation) {
 function handleVisibilityChange() {
   const isHidden = document.visibilityState === 'hidden';
   if (dbgVisibility) {
-    dbgVisibility.textContent = isHidden ? 'BACKGROUND / MINIMIZED (VAD Active)' : 'VISIBLE';
+    dbgVisibility.textContent = isHidden ? 'BACKGROUND / MINIMIZED (Worker Active)' : 'VISIBLE';
     dbgVisibility.className = isHidden ? 'debug-value warn' : 'debug-value ok';
   }
 
-  // Ensure AudioContext remains running
   if (audioContext && audioContext.state === 'suspended') {
     audioContext.resume().then(() => {
       if (dbgAudioCtx) {
@@ -527,17 +587,15 @@ function handleDisconnect() {
   speechStartTime = 0;
   lastAboveThresholdTime = 0;
 
+  if (vadWorker) {
+    vadWorker.postMessage('stop');
+  }
+
+  stopSilentMediaKeepalive();
+
   if (uiAnimFrameId) cancelAnimationFrame(uiAnimFrameId);
   uiAnimFrameId = null;
 
-  if (scriptProcessor) {
-    scriptProcessor.disconnect();
-    scriptProcessor = null;
-  }
-  if (muteGain) {
-    muteGain.disconnect();
-    muteGain = null;
-  }
   if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
   if (audioContext) {
     try { audioContext.close(); } catch (e) {}
@@ -545,6 +603,8 @@ function handleDisconnect() {
 
   mediaStream = null;
   audioContext = null;
+  analyser = null;
+  analyserData = null;
 
   connectBtn.style.display = 'block';
   disconnectBtn.style.display = 'none';
