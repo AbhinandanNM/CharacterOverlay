@@ -10,6 +10,19 @@ interface ControlPanelProps {
   mode: AppMode;
   volume: number;
   micStarted: boolean;
+  // Network voice props
+  connected: boolean;
+  statusText: string;
+  serverUrl: string;
+  roomId: string;
+  roomUsers: import('../types/avatar').RoomUser[];
+  devTestSpeaking: Record<string, boolean>;
+  onSetServerUrl: (url: string) => void;
+  onSetRoomId: (id: string) => void;
+  onConnectNetwork: () => void;
+  onDisconnectNetwork: () => void;
+  onToggleDevTest: (avatarId: string) => void;
+  // Actions
   onModeToggle: () => void;
   onSelectAvatar: (id: string | null) => void;
   onAddAvatar: (config: Omit<AvatarConfig, 'id' | 'zIndex'>) => void;
@@ -31,6 +44,17 @@ export function ControlPanel({
   mode,
   volume,
   micStarted,
+  connected,
+  statusText,
+  serverUrl,
+  roomId,
+  roomUsers,
+  devTestSpeaking,
+  onSetServerUrl,
+  onSetRoomId,
+  onConnectNetwork,
+  onDisconnectNetwork,
+  onToggleDevTest,
   onModeToggle,
   onSelectAvatar,
   onAddAvatar,
@@ -48,6 +72,7 @@ export function ControlPanel({
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [panelPos, setPanelPos] = useState({ x: 20, y: 20 });
+  const [showNetworkSettings, setShowNetworkSettings] = useState(false);
 
   const selectedAvatar = avatars.find(a => a.id === selectedId) ?? null;
   const editingAvatar = avatars.find(a => a.id === editingId) ?? null;
@@ -56,8 +81,7 @@ export function ControlPanel({
 
   // ── Dragging the Control Panel ───────────────────────────────────
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
-    // Only drag when clicking header background or title, not buttons/inputs
-    if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+    if ((e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).tagName === 'INPUT') return;
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
@@ -107,6 +131,113 @@ export function ControlPanel({
 
         <Divider />
 
+        {/* ── Voice Network (Internet Sync) ───────────────────── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <SectionLabel>🌐 VOICE NETWORK</SectionLabel>
+          <button
+            onClick={() => setShowNetworkSettings(!showNetworkSettings)}
+            style={{ background: 'transparent', border: 'none', color: '#63b3ed', fontSize: 11, cursor: 'pointer' }}
+          >
+            {showNetworkSettings ? '▲ Hide' : '⚙️ Setup'}
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: connected ? '#48bb78' : '#e53e3e',
+              boxShadow: connected ? '0 0 6px #48bb78' : 'none'
+            }} />
+            <span style={{ color: connected ? '#68d391' : '#a0aec0', fontWeight: 'bold', fontSize: 11 }}>
+              {statusText}
+            </span>
+          </div>
+          <button
+            onClick={connected ? onDisconnectNetwork : onConnectNetwork}
+            style={{
+              padding: '3px 8px',
+              borderRadius: 6,
+              border: 'none',
+              fontSize: 11,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              background: connected ? 'rgba(239,68,68,0.2)' : 'linear-gradient(135deg,#3b82f6,#6366f1)',
+              color: connected ? '#fc8181' : 'white',
+            }}
+          >
+            {connected ? 'Disconnect' : 'Connect'}
+          </button>
+        </div>
+
+        {showNetworkSettings && (
+          <div style={{ background: 'rgba(0,0,0,0.25)', padding: 8, borderRadius: 8, marginBottom: 8 }}>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: '#a0aec0', display: 'block', marginBottom: 2 }}>Server URL</span>
+              <input
+                type="text"
+                value={serverUrl}
+                onChange={e => onSetServerUrl(e.target.value)}
+                placeholder="ws://localhost:8080"
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 6,
+                  color: 'white',
+                  padding: '4px 6px',
+                  fontSize: 11,
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: '#a0aec0', display: 'block', marginBottom: 2 }}>Room ID</span>
+              <input
+                type="text"
+                value={roomId}
+                onChange={e => onSetRoomId(e.target.value)}
+                placeholder="ANTIC-STREAM-01"
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 6,
+                  color: 'white',
+                  padding: '4px 6px',
+                  fontSize: 11,
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Connected Room Users List */}
+        {connected && roomUsers.length > 0 && (
+          <div style={{ marginBottom: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {roomUsers.map((u, i) => (
+              <span
+                key={i}
+                style={{
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  background: u.role === 'overlay' ? 'rgba(99,179,237,0.2)' : 'rgba(72,187,120,0.2)',
+                  color: u.role === 'overlay' ? '#63b3ed' : '#68d391',
+                  border: `1px solid ${u.role === 'overlay' ? 'rgba(99,179,237,0.3)' : 'rgba(72,187,120,0.3)'}`,
+                }}
+              >
+                {u.role === 'overlay' ? '🖥️ Host' : `🎙️ ${u.userId}`}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <Divider />
+
         {/* ── Avatar Library ─────────────────────────────────── */}
         <SectionLabel>AVATARS ({avatars.length})</SectionLabel>
         <AvatarLibrary
@@ -130,6 +261,42 @@ export function ControlPanel({
         {selectedAvatar && isEdit ? (
           <>
             <SectionLabel>SELECTED: {selectedAvatar.name}</SectionLabel>
+
+            {/* Voice User Assignment */}
+            <InspectorRow label="Voice User">
+              <select
+                value={selectedAvatar.voiceUserId || ''}
+                onChange={e => onUpdateAvatar(selectedAvatar.id, { voiceUserId: e.target.value || undefined })}
+                style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.07)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 6,
+                  color: 'white',
+                  padding: '3px 6px',
+                  fontSize: 11,
+                  outline: 'none',
+                }}
+              >
+                <option value="" style={{ background: '#141423' }}>[ Local Mic / None ]</option>
+                {/* Dynamically list connected companions */}
+                {roomUsers
+                  .filter(u => u.role !== 'overlay')
+                  .map(u => (
+                    <option key={u.userId} value={u.userId} style={{ background: '#141423' }}>
+                      🟢 {u.userId} (Connected)
+                    </option>
+                  ))}
+                {/* Always provide defaults if not in list */}
+                {['ANM', 'SOM', 'ATHARV']
+                  .filter(preset => !roomUsers.some(u => u.userId.toUpperCase() === preset))
+                  .map(preset => (
+                    <option key={preset} value={preset} style={{ background: '#141423' }}>
+                      🎙️ {preset}
+                    </option>
+                  ))}
+              </select>
+            </InspectorRow>
 
             <InspectorRow label="X">
               <NumericInput
@@ -214,11 +381,40 @@ export function ControlPanel({
           </div>
         ) : null}
 
-        {/* ── Microphone ─────────────────────────────────────── */}
-        <SectionLabel>MICROPHONE</SectionLabel>
+        {/* ── Remote Voice Developer Test ────────────────────── */}
+        <SectionLabel>🧪 DEVELOPER TEST MODE</SectionLabel>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+          {avatars.map(avatar => {
+            const isTestTalking = Boolean(devTestSpeaking[avatar.id]);
+            return (
+              <button
+                key={avatar.id}
+                onClick={() => onToggleDevTest(avatar.id)}
+                style={{
+                  flex: 1,
+                  padding: '5px 4px',
+                  borderRadius: 6,
+                  border: isTestTalking ? '1px solid #48bb78' : '1px solid rgba(255,255,255,0.15)',
+                  background: isTestTalking ? 'rgba(72,187,120,0.25)' : 'rgba(255,255,255,0.05)',
+                  color: isTestTalking ? '#68d391' : 'white',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                }}
+              >
+                {avatar.name} {isTestTalking ? '🗣️ TALK' : '⚪ IDLE'}
+              </button>
+            );
+          })}
+        </div>
+
+        <Divider />
+
+        {/* ── Local Microphone ────────────────────────────────── */}
+        <SectionLabel>LOCAL MICROPHONE</SectionLabel>
         {!micStarted ? (
           <button style={micBtn} onClick={onStartMicrophone}>
-            🎙️ Start Microphone
+            🎙️ Start Local Microphone
           </button>
         ) : (
           <div style={micRow}>

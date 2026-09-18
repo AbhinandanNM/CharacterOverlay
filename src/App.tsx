@@ -1,12 +1,14 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import './App.css';
 import { AvatarStage } from './components/AvatarStage';
 import { ControlPanel } from './components/ControlPanel';
 import { useAvatarStore } from './hooks/useAvatarStore';
 import { useMicrophone } from './hooks/useMicrophone';
+import { useRemoteVoice } from './hooks/useRemoteVoice';
 
 function App() {
   const store = useAvatarStore();
+  const remote = useRemoteVoice();
 
   // Listen for global F9 hotkey from Electron (works even when overlay does not have focus)
   useEffect(() => {
@@ -38,25 +40,54 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [store.mode, store.setMode]);
 
-  // Drive the FIRST avatar's speaking state from the local microphone
   const handleVolumeChange = useCallback(
     (average: number) => {
-      const firstAvatar = store.avatars[0];
-      if (!firstAvatar) return;
-      store.setSpeaking(firstAvatar.id, average > firstAvatar.sensitivity);
+      store.avatars.forEach(avatar => {
+        // If avatar has no voiceUserId assigned, local mic drives it
+        if (!avatar.voiceUserId) {
+          store.setSpeaking(avatar.id, average > avatar.sensitivity);
+        }
+      });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [store.avatars, store.setSpeaking]
   );
 
   const { volume, micStarted, startMicrophone } = useMicrophone(handleVolumeChange);
+
+  // Unified Speaking Map: Evaluates Local Mic + Remote WS Voice User + Dev Test Mode
+  const compositeSpeaking = useMemo(() => {
+    const map: Record<string, boolean> = {};
+
+    store.avatars.forEach(avatar => {
+      // 1. Dev test mode simulation
+      if (remote.devTestSpeaking[avatar.id]) {
+        map[avatar.id] = true;
+        return;
+      }
+
+      // 2. Remote WebSocket user assignment
+      if (avatar.voiceUserId) {
+        const key = avatar.voiceUserId.toLowerCase();
+        const isRemoteActive = Boolean(
+          remote.remoteSpeaking[key] || remote.remoteSpeaking[avatar.voiceUserId]
+        );
+        map[avatar.id] = isRemoteActive;
+        return;
+      }
+
+      // 3. Local microphone (if no remote user is mapped)
+      map[avatar.id] = Boolean(store.speaking[avatar.id]);
+    });
+
+    return map;
+  }, [store.avatars, store.speaking, remote.remoteSpeaking, remote.devTestSpeaking]);
 
   return (
     <div className="app">
       {/* Transparent avatar canvas */}
       <AvatarStage
         avatars={store.avatars}
-        speaking={store.speaking}
+        speaking={compositeSpeaking}
         selectedId={store.selectedId}
         mode={store.mode}
         onSelectAvatar={store.setSelectedId}
@@ -72,6 +103,17 @@ function App() {
           mode={store.mode}
           volume={volume}
           micStarted={micStarted}
+          connected={remote.connected}
+          statusText={remote.statusText}
+          serverUrl={remote.serverUrl}
+          roomId={remote.roomId}
+          roomUsers={remote.roomUsers}
+          devTestSpeaking={remote.devTestSpeaking}
+          onSetServerUrl={remote.setServerUrl}
+          onSetRoomId={remote.setRoomId}
+          onConnectNetwork={remote.connect}
+          onDisconnectNetwork={remote.disconnect}
+          onToggleDevTest={remote.toggleDevTestSpeaking}
           onModeToggle={() => store.setMode(store.mode === 'edit' ? 'stream' : 'edit')}
           onSelectAvatar={store.setSelectedId}
           onAddAvatar={store.addAvatar}
@@ -88,7 +130,7 @@ function App() {
         />
       )}
 
-      {/* Stream mode: No buttons or controls visible on overlay. Press 'E' or 'Escape' to return to Edit mode */}
+      {/* Stream mode: No buttons or controls visible on overlay. Press 'E' or 'Escape' or 'F9' to toggle Edit mode */}
     </div>
   );
 }

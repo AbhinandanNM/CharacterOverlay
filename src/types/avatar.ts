@@ -1,17 +1,23 @@
 // Avatar configuration — fully serializable, stored in localStorage
 export interface AvatarConfig {
-  id: string;           // unique ID (crypto.randomUUID())
-  name: string;         // display name e.g. "ANM", "SOM"
-  idleImage: string;    // URL or base64 data URL for idle pose
-  talkingImage: string; // URL or base64 data URL for talking pose
-  x: number;            // px from stage left
-  y: number;            // px from stage top
-  width: number;        // px
-  height: number;       // px
-  rotation: number;     // degrees (0 = no rotation)
-  zIndex: number;       // layer order (higher = in front)
-  visible: boolean;     // show/hide toggle
-  sensitivity: number;  // microphone volume threshold 1–30
+  id: string;             // unique ID (crypto.randomUUID())
+  name: string;           // display name e.g. "ANM", "SOM"
+  idleImage: string;      // URL or base64 data URL for idle pose
+  talkingImage: string;   // URL or base64 data URL for talking pose
+  x: number;              // px from stage left
+  y: number;              // px from stage top
+  width: number;          // px
+  height: number;         // px
+  rotation: number;       // degrees (0 = no rotation)
+  zIndex: number;         // layer order (higher = in front)
+  visible: boolean;       // show/hide toggle
+  sensitivity: number;    // microphone volume threshold 1–30
+  voiceUserId?: string;   // assigned remote user ID (e.g. "som", "atharv")
+}
+
+export interface RoomUser {
+  userId: string;
+  role: 'overlay' | 'companion';
 }
 
 // Runtime-only speaking state (not persisted)
@@ -22,6 +28,7 @@ export interface AvatarRuntime {
 export type AppMode = 'edit' | 'stream';
 
 export const LAYOUT_STORAGE_KEY = 'reactive-avatars-layout';
+export const NETWORK_STORAGE_KEY = 'reactive-avatars-network';
 
 // Default layout positions for ANM/SOM/ATHARV if no saved layout exists
 export const DEFAULT_AVATARS: AvatarConfig[] = [

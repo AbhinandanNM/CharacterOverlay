@@ -1,0 +1,13 @@
+{
+  "name": "reactive-avatars-server",
+  "version": "1.0.0",
+  "description": "Hosted WebSocket & Companion server for Reactive Avatars overlay",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

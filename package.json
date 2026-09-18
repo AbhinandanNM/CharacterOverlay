@@ -4,16 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-  "dev": "vite",
-  "electron": "electron electron/main.cjs",
-  "start": "concurrently \"npm run dev\" \"npm run electron\"",
-  "build": "tsc -b && vite build"
+    "dev": "vite",
+    "electron": "electron electron/main.cjs",
+    "server": "node server/server.js",
+    "start": "concurrently \"npm run dev\" \"npm run electron\"",
+    "start:all": "concurrently \"npm run server\" \"npm run dev\" \"npm run electron\"",
+    "build": "tsc -b && vite build"
   },
   "dependencies": {
     "concurrently": "^10.0.5",
     "electron": "^44.4.2",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

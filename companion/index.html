@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Companion — Reactive Avatars</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background: #0d0d19;
+      color: #f7fafc;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: rgba(20, 20, 35, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 28px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .header-icon {
+      font-size: 28px;
+    }
+
+    .header-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .header-subtitle {
+      font-size: 12px;
+      color: #a0aec0;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #a0aec0;
+      margin-bottom: 6px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      color: white;
+      font-size: 14px;
+      outline: none;
+      transition: border 0.15s;
+    }
+
+    input:focus, select:focus {
+      border-color: #63b3ed;
+    }
+
+    select option {
+      background: #141423;
+      color: white;
+    }
+
+    .range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: #68d391;
+      padding: 0;
+      height: 6px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-connect {
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: white;
+    }
+
+    .btn-connect:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
+    }
+
+    .btn-disconnect {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fc8181;
+      margin-top: 10px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.05);
+      margin-bottom: 16px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #718096;
+    }
+
+    .dot.connected {
+      background: #48bb78;
+      box-shadow: 0 0 8px #48bb78;
+    }
+
+    .dot.speaking {
+      background: #ecc94b;
+      box-shadow: 0 0 10px #ecc94b;
+    }
+
+    .meter-container {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .meter-bar-outer {
+      height: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 8px;
+      position: relative;
+    }
+
+    .meter-bar-inner {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #48bb78, #ecc94b, #f56565);
+      transition: width 0.06s ease;
+      border-radius: 6px;
+    }
+
+    .meter-threshold {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    .speaking-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .speaking-pill {
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #718096;
+    }
+
+    .speaking-pill.active {
+      background: #38a169;
+      color: white;
+      box-shadow: 0 0 12px rgba(56, 161, 105, 0.6);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="header">
+      <div class="header-icon">🎙️</div>
+      <div>
+        <div class="header-title">Voice Companion</div>
+        <div class="header-subtitle">Stream Avatar Microphone Link</div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status-badge" id="statusBadge">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+
+    <!-- Server URL -->
+    <div class="field">
+      <label>Server URL</label>
+      <input type="text" id="serverUrl" value="" placeholder="wss://your-app.onrender.com" />
+    </div>
+
+    <!-- Room ID -->
+    <div class="field">
+      <label>Room ID</label>
+      <input type="text" id="roomId" value="ANTIC-STREAM-01" placeholder="e.g. ANTIC-STREAM-01" />
+    </div>
+
+    <!-- User ID -->
+    <div class="field">
+      <label>Your User ID</label>
+      <input type="text" id="userId" value="SOM" placeholder="e.g. SOM or ATHARV" />
+    </div>
+
+    <!-- Microphone Selection -->
+    <div class="field">
+      <label>Microphone</label>
+      <select id="micSelect">
+        <option value="">Default Microphone</option>
+      </select>
+    </div>
+
+    <!-- Sensitivity Slider -->
+    <div class="field">
+      <div style="display:flex; justify-content:space-between;">
+        <label>Sensitivity</label>
+        <span style="font-size:12px; color:#68d391; font-weight:bold;" id="sensVal">15</span>
+      </div>
+      <div class="range-wrap">
+        <input type="range" id="sensSlider" min="1" max="40" value="15" />
+      </div>
+    </div>
+
+    <!-- Connect / Disconnect Buttons -->
+    <button class="btn btn-connect" id="connectBtn">🚀 Connect to Room</button>
+    <button class="btn btn-disconnect" id="disconnectBtn" style="display:none;">Disconnect</button>
+
+    <!-- Real-time Meter & Speaking Status -->
+    <div class="meter-container" id="meterSection" style="display:none;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:#a0aec0;">
+        <span>Microphone Level</span>
+        <span id="volumeNumber">0</span>
+      </div>
+      <div class="meter-bar-outer">
+        <div class="meter-threshold" id="thresholdLine"></div>
+        <div class="meter-bar-inner" id="meterBar"></div>
+      </div>
+
+      <div class="speaking-indicator">
+        <span style="color:#a0aec0; font-size:12px;">Speaking State:</span>
+        <span class="speaking-pill" id="speakingPill">SILENT</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
