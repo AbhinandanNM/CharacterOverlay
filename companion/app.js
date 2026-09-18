@@ -1,6 +1,6 @@
-// Friend Companion Client Script — v2.2.0
-// Analyzes local microphone via Web Audio API, applies VAD debounce, and emits speaking state via WebSocket
-// Includes full debug telemetry, visibility failsafes, periodic voice heartbeats, generation-guarded WebSocket lifecycle, and disconnect diagnostics.
+// Friend Companion Client Script — v2.3.0
+// Robust background-proof audio processing via Web Audio ScriptProcessorNode.
+// Runs continuously even when the browser is minimized, backgrounded, or running full-screen games.
 
 let ws = null;
 let currentConnectionGeneration = 0;
@@ -10,13 +10,15 @@ let voiceHeartbeatTimer = null;
 let manualDisconnect = false;
 
 let audioContext = null;
-let analyser = null;
-let animFrameId = null;
+let scriptProcessor = null;
+let muteGain = null;
 let mediaStream = null;
+let uiAnimFrameId = null;
 
 let isSpeaking = false;
-let speechStartTimer = null;
-let speechEndTimer = null;
+let latestVolume = 0;
+let speechStartTime = 0;
+let lastAboveThresholdTime = 0;
 
 const SPEECH_START_DELAY = 60; // ms above threshold to trigger speaking
 const SPEECH_END_DELAY = 220;  // ms below threshold to end speaking
@@ -79,7 +81,7 @@ const CLOSE_CODE_EXPLANATIONS = {
   1002: '1002 Protocol Error',
   1003: '1003 Unsupported Data',
   1005: '1005 No Status Received',
-  1006: '1006 Abnormal Closure (Browser/network/server terminated socket without close frame)',
+  1006: '1006 Abnormal Closure (Socket dropped without close frame)',
   1008: '1008 Policy Violation',
   1011: '1011 Server Error (Crash or unexpected condition)',
 };
@@ -150,7 +152,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
   navigator.mediaDevices.addEventListener('devicechange', getAudioDevices);
 }
 
-// Check initial permissions if query available
+// Check initial permissions
 if (navigator.permissions && navigator.permissions.query) {
   navigator.permissions.query({ name: 'microphone' }).then(result => {
     dbgMicPerm.textContent = result.state.toUpperCase();
@@ -162,7 +164,7 @@ if (navigator.permissions && navigator.permissions.query) {
   }).catch(() => {});
 }
 
-// Initialize Local Microphone
+// ── Background-Proof Web Audio Setup ─────────────────────────────
 async function startMicrophoneStream() {
   if (mediaStream) {
     mediaStream.getTracks().forEach(t => t.stop());
@@ -179,18 +181,75 @@ async function startMicrophoneStream() {
   const selectedOpt = micSelect.options[micSelect.selectedIndex];
   dbgMicDevice.textContent = selectedOpt ? selectedOpt.text : 'Default';
 
+  // Create AudioContext
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   dbgAudioCtx.textContent = audioContext.state.toUpperCase();
   dbgAudioCtx.className = audioContext.state === 'running' ? 'debug-value ok' : 'debug-value warn';
 
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.5;
-
   const source = audioContext.createMediaStreamSource(mediaStream);
-  source.connect(analyser);
 
-  detectVolume();
+  // ScriptProcessorNode runs on the Web Audio thread and NEVER pauses when minimized
+  scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+
+  // Mute gain connected to destination keeps the audio rendering pipeline active without echoing
+  muteGain = audioContext.createGain();
+  muteGain.gain.value = 0;
+
+  source.connect(scriptProcessor);
+  scriptProcessor.connect(muteGain);
+  muteGain.connect(audioContext.destination);
+
+  // Continuous Audio Processing Loop (Active even when minimized)
+  scriptProcessor.onaudioprocess = (e) => {
+    const input = e.inputBuffer.getChannelData(0);
+    let sum = 0;
+    for (let i = 0; i < input.length; i++) {
+      sum += input[i] * input[i];
+    }
+    const rms = Math.sqrt(sum / input.length);
+    // Scale RMS (0.0 to 1.0) to a 0-100 scale
+    latestVolume = Math.min(100, Math.round(rms * 350));
+
+    const now = performance.now();
+    const threshold = Number(sensSlider.value);
+
+    // VAD Debouncing & Hysteresis Logic
+    if (latestVolume > threshold) {
+      lastAboveThresholdTime = now;
+      if (!isSpeaking) {
+        if (speechStartTime === 0) speechStartTime = now;
+        if (now - speechStartTime >= SPEECH_START_DELAY) {
+          sendSpeakingState(true);
+          speechStartTime = 0;
+        }
+      }
+    } else {
+      speechStartTime = 0;
+      if (isSpeaking) {
+        if (now - lastAboveThresholdTime >= SPEECH_END_DELAY) {
+          sendSpeakingState(false);
+        }
+      }
+    }
+  };
+
+  startUIRefreshLoop();
+}
+
+function startUIRefreshLoop() {
+  function renderUI() {
+    if (audioContext) {
+      volumeNumber.textContent = latestVolume;
+      const barPercent = Math.min(100, (latestVolume / 40) * 100);
+      meterBar.style.width = `${barPercent}%`;
+
+      const threshold = Number(sensSlider.value);
+      dbgMicLevel.textContent = `${latestVolume} / ${threshold}`;
+    }
+    uiAnimFrameId = requestAnimationFrame(renderUI);
+  }
+  if (uiAnimFrameId) cancelAnimationFrame(uiAnimFrameId);
+  uiAnimFrameId = requestAnimationFrame(renderUI);
 }
 
 function updateDebugSocketState() {
@@ -215,11 +274,6 @@ function updateDebugSocketState() {
 }
 
 function sendSpeakingState(speaking, isManualTest = false) {
-  // If page is hidden and speaking=true is attempted from backgrounded VAD, ignore speaking=true
-  if (document.visibilityState === 'hidden' && speaking && !isManualTest) {
-    speaking = false;
-  }
-
   const prevSpeaking = isSpeaking;
   isSpeaking = speaking;
 
@@ -267,132 +321,45 @@ function sendVoiceHeartbeat(generation) {
   if (generation !== currentConnectionGeneration) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const currentSpeaking = isSpeaking && document.visibilityState !== 'hidden';
   const payload = {
     type: 'voice_heartbeat',
     roomId: roomIdInput.value.trim().toUpperCase(),
     userId: userIdInput.value.trim(),
-    speaking: currentSpeaking,
+    speaking: isSpeaking,
   };
 
   try {
     ws.send(JSON.stringify(payload));
     if (dbgLastHeartbeat) {
-      dbgLastHeartbeat.textContent = `${ts()} [speaking=${currentSpeaking}]`;
+      dbgLastHeartbeat.textContent = `${ts()} [speaking=${isSpeaking}]`;
     }
   } catch (e) {}
 }
 
-function detectVolume() {
-  if (!analyser) return;
-
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(data);
-
-  let sum = 0;
-  for (let i = 0; i < data.length; i++) {
-    sum += data[i];
-  }
-  const avg = sum / data.length;
-  const currentVolume = Math.round(avg);
-
-  // Update UI meter
-  volumeNumber.textContent = currentVolume;
-  const barPercent = Math.min(100, (currentVolume / 40) * 100);
-  meterBar.style.width = `${barPercent}%`;
-
-  const threshold = Number(sensSlider.value);
-  dbgMicLevel.textContent = `${currentVolume} / ${threshold}`;
-
-  // If page is hidden, force silent and do not initiate speech
-  if (document.visibilityState === 'hidden') {
-    if (speechStartTimer) {
-      clearTimeout(speechStartTimer);
-      speechStartTimer = null;
-    }
-    if (isSpeaking) {
-      sendSpeakingState(false);
-    }
-    animFrameId = requestAnimationFrame(detectVolume);
-    return;
-  }
-
-  // VAD Debounce & Hysteresis Logic
-  if (currentVolume > threshold) {
-    if (speechEndTimer) {
-      clearTimeout(speechEndTimer);
-      speechEndTimer = null;
-    }
-    if (!isSpeaking && !speechStartTimer) {
-      speechStartTimer = setTimeout(() => {
-        if (document.visibilityState !== 'hidden') {
-          sendSpeakingState(true);
-        }
-        speechStartTimer = null;
-      }, SPEECH_START_DELAY);
-    }
-  } else {
-    if (speechStartTimer) {
-      clearTimeout(speechStartTimer);
-      speechStartTimer = null;
-    }
-    if (isSpeaking && !speechEndTimer) {
-      speechEndTimer = setTimeout(() => {
-        sendSpeakingState(false);
-        speechEndTimer = null;
-      }, SPEECH_END_DELAY);
-    }
-  }
-
-  animFrameId = requestAnimationFrame(detectVolume);
-}
-
-// ── Visibility & Window State Failsafe ────────────────────────────
+// ── Visibility & Focus Handling ──────────────────────────────────
 function handleVisibilityChange() {
   const isHidden = document.visibilityState === 'hidden';
   if (dbgVisibility) {
-    dbgVisibility.textContent = isHidden ? 'HIDDEN (Backgrounded)' : 'VISIBLE';
+    dbgVisibility.textContent = isHidden ? 'BACKGROUND / MINIMIZED (VAD Active)' : 'VISIBLE';
     dbgVisibility.className = isHidden ? 'debug-value warn' : 'debug-value ok';
   }
 
-  if (isHidden) {
-    // Immediately stop speech and send false
-    if (speechStartTimer) {
-      clearTimeout(speechStartTimer);
-      speechStartTimer = null;
-    }
-    if (isSpeaking) {
-      sendSpeakingState(false);
-    }
-  } else {
-    // Resumed visibility
-    if (audioContext && audioContext.state === 'suspended') {
-      audioContext.resume().then(() => {
-        if (dbgAudioCtx) {
-          dbgAudioCtx.textContent = audioContext.state.toUpperCase();
-          dbgAudioCtx.className = 'debug-value ok';
-        }
-      }).catch(() => {});
-    }
+  // Ensure AudioContext remains running
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext.resume().then(() => {
+      if (dbgAudioCtx) {
+        dbgAudioCtx.textContent = audioContext.state.toUpperCase();
+        dbgAudioCtx.className = 'debug-value ok';
+      }
+    }).catch(() => {});
   }
 }
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
+window.addEventListener('blur', handleVisibilityChange);
+window.addEventListener('focus', handleVisibilityChange);
 
-window.addEventListener('blur', () => {
-  // If window blur is accompanied by hidden state or minimize, visibilitychange handles it.
-  if (document.visibilityState === 'hidden') {
-    handleVisibilityChange();
-  }
-});
-
-window.addEventListener('focus', () => {
-  if (document.visibilityState === 'visible') {
-    handleVisibilityChange();
-  }
-});
-
-// Connect to WebSocket Server with generation token protection
+// ── Connect to WebSocket Server with generation token protection ─
 async function connect() {
   manualDisconnect = false;
   const serverUrl = serverUrlInput.value.trim();
@@ -423,7 +390,7 @@ async function connect() {
     ws = null;
   }
 
-  // 2. Increment generation token so old socket callbacks are discarded
+  // 2. Increment generation token
   const myGeneration = ++currentConnectionGeneration;
 
   if (reconnectTimer) {
@@ -480,7 +447,7 @@ async function connect() {
       socket.send(JSON.stringify(joinMsg));
       dbgLastMsgOut.textContent = `${ts()} [join room=${roomId} user=${userId}]`;
 
-      // Start periodic lightweight state refresh heartbeat
+      // Start periodic state refresh heartbeat
       if (voiceHeartbeatTimer) clearInterval(voiceHeartbeatTimer);
       voiceHeartbeatTimer = setInterval(() => {
         sendVoiceHeartbeat(myGeneration);
@@ -496,7 +463,6 @@ async function connect() {
         if (msg.type === 'joined') {
           dbgLastMsgIn.textContent = `${ts()} [joined room=${msg.roomId} count=${msg.users?.length || 1}]`;
         } else if (msg.type === 'ping') {
-          // Respond to server ping
           socket.send(JSON.stringify({ type: 'pong', time: ts() }));
         }
       } catch (e) {
@@ -513,7 +479,6 @@ async function connect() {
 
       const code = event.code;
       const reason = event.reason || '';
-      const explanation = CLOSE_CODE_EXPLANATIONS[code] || `${code} Unknown Close Code`;
 
       dbgCloseCode.textContent = `${code} (${CLOSE_CODE_EXPLANATIONS[code] || 'Custom/Unknown'})`;
       dbgCloseReason.textContent = reason || (code === 1006 ? 'Abnormal closure (no close frame received)' : 'None');
@@ -526,7 +491,6 @@ async function connect() {
         statusText.textContent = `Disconnected (Retrying #${reconnectAttempts}...)`;
         statusDot.className = 'dot';
 
-        // Auto-reconnect after 3 seconds
         reconnectTimer = setTimeout(() => {
           if (!manualDisconnect) {
             connect();
@@ -557,24 +521,30 @@ async function connect() {
 }
 
 function handleDisconnect() {
-  if (speechStartTimer) clearTimeout(speechStartTimer);
-  if (speechEndTimer) clearTimeout(speechEndTimer);
   if (voiceHeartbeatTimer) clearInterval(voiceHeartbeatTimer);
-  speechStartTimer = null;
-  speechEndTimer = null;
   voiceHeartbeatTimer = null;
   isSpeaking = false;
+  speechStartTime = 0;
+  lastAboveThresholdTime = 0;
 
-  if (animFrameId) cancelAnimationFrame(animFrameId);
+  if (uiAnimFrameId) cancelAnimationFrame(uiAnimFrameId);
+  uiAnimFrameId = null;
+
+  if (scriptProcessor) {
+    scriptProcessor.disconnect();
+    scriptProcessor = null;
+  }
+  if (muteGain) {
+    muteGain.disconnect();
+    muteGain = null;
+  }
   if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
   if (audioContext) {
     try { audioContext.close(); } catch (e) {}
   }
 
-  animFrameId = null;
   mediaStream = null;
   audioContext = null;
-  analyser = null;
 
   connectBtn.style.display = 'block';
   disconnectBtn.style.display = 'none';
