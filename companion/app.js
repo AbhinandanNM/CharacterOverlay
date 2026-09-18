@@ -1,11 +1,12 @@
-// Friend Companion Client Script — v2.1.0
+// Friend Companion Client Script — v2.2.0
 // Analyzes local microphone via Web Audio API, applies VAD debounce, and emits speaking state via WebSocket
-// Includes full debug telemetry, test injection, generation-guarded WebSocket lifecycle, and disconnect diagnostics.
+// Includes full debug telemetry, visibility failsafes, periodic voice heartbeats, generation-guarded WebSocket lifecycle, and disconnect diagnostics.
 
 let ws = null;
 let currentConnectionGeneration = 0;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
+let voiceHeartbeatTimer = null;
 let manualDisconnect = false;
 
 let audioContext = null;
@@ -19,6 +20,7 @@ let speechEndTimer = null;
 
 const SPEECH_START_DELAY = 60; // ms above threshold to trigger speaking
 const SPEECH_END_DELAY = 220;  // ms below threshold to end speaking
+const VOICE_HEARTBEAT_INTERVAL_MS = 1500; // ms between state refresh heartbeats
 
 // UI Elements
 const serverUrlInput = document.getElementById('serverUrl');
@@ -55,6 +57,8 @@ const dbgCloseCode = document.getElementById('dbgCloseCode');
 const dbgCloseReason = document.getElementById('dbgCloseReason');
 const dbgMicDevice = document.getElementById('dbgMicDevice');
 const dbgMicPerm = document.getElementById('dbgMicPerm');
+const dbgVisibility = document.getElementById('dbgVisibility');
+const dbgLastHeartbeat = document.getElementById('dbgLastHeartbeat');
 const dbgAudioCtx = document.getElementById('dbgAudioCtx');
 const dbgMicLevel = document.getElementById('dbgMicLevel');
 const dbgVadTransition = document.getElementById('dbgVadTransition');
@@ -211,6 +215,11 @@ function updateDebugSocketState() {
 }
 
 function sendSpeakingState(speaking, isManualTest = false) {
+  // If page is hidden and speaking=true is attempted from backgrounded VAD, ignore speaking=true
+  if (document.visibilityState === 'hidden' && speaking && !isManualTest) {
+    speaking = false;
+  }
+
   const prevSpeaking = isSpeaking;
   isSpeaking = speaking;
 
@@ -254,6 +263,26 @@ function sendSpeakingState(speaking, isManualTest = false) {
   }
 }
 
+function sendVoiceHeartbeat(generation) {
+  if (generation !== currentConnectionGeneration) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  const currentSpeaking = isSpeaking && document.visibilityState !== 'hidden';
+  const payload = {
+    type: 'voice_heartbeat',
+    roomId: roomIdInput.value.trim().toUpperCase(),
+    userId: userIdInput.value.trim(),
+    speaking: currentSpeaking,
+  };
+
+  try {
+    ws.send(JSON.stringify(payload));
+    if (dbgLastHeartbeat) {
+      dbgLastHeartbeat.textContent = `${ts()} [speaking=${currentSpeaking}]`;
+    }
+  } catch (e) {}
+}
+
 function detectVolume() {
   if (!analyser) return;
 
@@ -275,6 +304,19 @@ function detectVolume() {
   const threshold = Number(sensSlider.value);
   dbgMicLevel.textContent = `${currentVolume} / ${threshold}`;
 
+  // If page is hidden, force silent and do not initiate speech
+  if (document.visibilityState === 'hidden') {
+    if (speechStartTimer) {
+      clearTimeout(speechStartTimer);
+      speechStartTimer = null;
+    }
+    if (isSpeaking) {
+      sendSpeakingState(false);
+    }
+    animFrameId = requestAnimationFrame(detectVolume);
+    return;
+  }
+
   // VAD Debounce & Hysteresis Logic
   if (currentVolume > threshold) {
     if (speechEndTimer) {
@@ -283,7 +325,9 @@ function detectVolume() {
     }
     if (!isSpeaking && !speechStartTimer) {
       speechStartTimer = setTimeout(() => {
-        sendSpeakingState(true);
+        if (document.visibilityState !== 'hidden') {
+          sendSpeakingState(true);
+        }
         speechStartTimer = null;
       }, SPEECH_START_DELAY);
     }
@@ -302,6 +346,51 @@ function detectVolume() {
 
   animFrameId = requestAnimationFrame(detectVolume);
 }
+
+// ── Visibility & Window State Failsafe ────────────────────────────
+function handleVisibilityChange() {
+  const isHidden = document.visibilityState === 'hidden';
+  if (dbgVisibility) {
+    dbgVisibility.textContent = isHidden ? 'HIDDEN (Backgrounded)' : 'VISIBLE';
+    dbgVisibility.className = isHidden ? 'debug-value warn' : 'debug-value ok';
+  }
+
+  if (isHidden) {
+    // Immediately stop speech and send false
+    if (speechStartTimer) {
+      clearTimeout(speechStartTimer);
+      speechStartTimer = null;
+    }
+    if (isSpeaking) {
+      sendSpeakingState(false);
+    }
+  } else {
+    // Resumed visibility
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume().then(() => {
+        if (dbgAudioCtx) {
+          dbgAudioCtx.textContent = audioContext.state.toUpperCase();
+          dbgAudioCtx.className = 'debug-value ok';
+        }
+      }).catch(() => {});
+    }
+  }
+}
+
+document.addEventListener('visibilitychange', handleVisibilityChange);
+
+window.addEventListener('blur', () => {
+  // If window blur is accompanied by hidden state or minimize, visibilitychange handles it.
+  if (document.visibilityState === 'hidden') {
+    handleVisibilityChange();
+  }
+});
+
+window.addEventListener('focus', () => {
+  if (document.visibilityState === 'visible') {
+    handleVisibilityChange();
+  }
+});
 
 // Connect to WebSocket Server with generation token protection
 async function connect() {
@@ -340,6 +429,10 @@ async function connect() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
+  }
+  if (voiceHeartbeatTimer) {
+    clearInterval(voiceHeartbeatTimer);
+    voiceHeartbeatTimer = null;
   }
 
   try {
@@ -386,6 +479,12 @@ async function connect() {
       };
       socket.send(JSON.stringify(joinMsg));
       dbgLastMsgOut.textContent = `${ts()} [join room=${roomId} user=${userId}]`;
+
+      // Start periodic lightweight state refresh heartbeat
+      if (voiceHeartbeatTimer) clearInterval(voiceHeartbeatTimer);
+      voiceHeartbeatTimer = setInterval(() => {
+        sendVoiceHeartbeat(myGeneration);
+      }, VOICE_HEARTBEAT_INTERVAL_MS);
     };
 
     socket.onmessage = (event) => {
@@ -397,7 +496,7 @@ async function connect() {
         if (msg.type === 'joined') {
           dbgLastMsgIn.textContent = `${ts()} [joined room=${msg.roomId} count=${msg.users?.length || 1}]`;
         } else if (msg.type === 'ping') {
-          // Respond to server ping if any custom ping arrives
+          // Respond to server ping
           socket.send(JSON.stringify({ type: 'pong', time: ts() }));
         }
       } catch (e) {
@@ -407,6 +506,11 @@ async function connect() {
 
     socket.onclose = (event) => {
       if (myGeneration !== currentConnectionGeneration) return;
+      if (voiceHeartbeatTimer) {
+        clearInterval(voiceHeartbeatTimer);
+        voiceHeartbeatTimer = null;
+      }
+
       const code = event.code;
       const reason = event.reason || '';
       const explanation = CLOSE_CODE_EXPLANATIONS[code] || `${code} Unknown Close Code`;
@@ -455,8 +559,10 @@ async function connect() {
 function handleDisconnect() {
   if (speechStartTimer) clearTimeout(speechStartTimer);
   if (speechEndTimer) clearTimeout(speechEndTimer);
+  if (voiceHeartbeatTimer) clearInterval(voiceHeartbeatTimer);
   speechStartTimer = null;
   speechEndTimer = null;
+  voiceHeartbeatTimer = null;
   isSpeaking = false;
 
   if (animFrameId) cancelAnimationFrame(animFrameId);
@@ -485,6 +591,10 @@ function disconnect() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
+  }
+  if (voiceHeartbeatTimer) {
+    clearInterval(voiceHeartbeatTimer);
+    voiceHeartbeatTimer = null;
   }
   if (ws) {
     try {

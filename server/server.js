@@ -1,4 +1,4 @@
-﻿import http from 'http';
+import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,8 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
-const SERVER_VERSION = '2.1.0';
+const SERVER_VERSION = '2.2.0';
 const COMPANION_DIR = path.join(__dirname, '..', 'companion');
+const VOICE_SAFETY_TIMEOUT_MS = 3500; // Force speaking:false if no voice update/heartbeat for 3.5s
 
 // ── Logging helpers ───────────────────────────────────────────────────────────
 function ts() { return new Date().toISOString(); }
@@ -41,7 +42,12 @@ const server = http.createServer((req, res) => {
     for (const [roomId, clients] of rooms.entries()) {
       roomData[roomId] = {
         count: clients.size,
-        users: [...clients].map(c => ({ userId: c.userId, role: c.role })),
+        users: [...clients].map(c => ({
+          userId: c.userId,
+          role: c.role,
+          speaking: c.speaking || false,
+          idleMs: Date.now() - (c.lastVoiceActivity || Date.now()),
+        })),
       };
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -80,7 +86,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 /**
- * rooms: Map<roomId, Set<{ ws, userId, role }>>
+ * rooms: Map<roomId, Set<{ ws, userId, role, speaking: boolean, lastVoiceActivity: number }>>
  */
 const rooms = new Map();
 let connectionCounter = 0;
@@ -105,6 +111,15 @@ function getRoomUsers(roomId) {
   return [...clients].filter(c => c.userId).map(c => ({ userId: c.userId, role: c.role }));
 }
 
+function findClient(roomId, ws) {
+  const clients = rooms.get(roomId);
+  if (!clients) return null;
+  for (const c of clients) {
+    if (c.ws === ws) return c;
+  }
+  return null;
+}
+
 const CLOSE_CODES = {
   1000: 'Normal Closure', 1001: 'Going Away', 1002: 'Protocol Error',
   1003: 'Unsupported Data', 1006: 'Abnormal Closure', 1008: 'Policy Violation',
@@ -118,8 +133,6 @@ wss.on('connection', (ws, req) => {
   let roomId = null;
   let userId = null;
   let role = 'companion';
-  // BUG FIX: isAlive MUST be a property on the ws object itself so the heartbeat
-  // interval (which only has the ws reference) can read and write it.
   ws.isAlive = true;
 
   log('WS CONNECT', `conn#${connId}`, `ip=${ip}`);
@@ -134,7 +147,9 @@ wss.on('connection', (ws, req) => {
       const data = JSON.parse(raw.toString());
       if (!data || typeof data !== 'object') return;
 
-      log('WS MSG', `conn#${connId} type=${data.type}`, `user=${data.userId || userId || '?'} room=${data.roomId || roomId || '?'}`);
+      if (data.type !== 'voice_heartbeat') {
+        log('WS MSG', `conn#${connId} type=${data.type}`, `user=${data.userId || userId || '?'} room=${data.roomId || roomId || '?'}`);
+      }
 
       switch (data.type) {
 
@@ -156,7 +171,14 @@ wss.on('connection', (ws, req) => {
           role = newRole;
 
           if (!rooms.has(roomId)) rooms.set(roomId, new Set());
-          rooms.get(roomId).add({ ws, userId, role });
+          const clientRecord = {
+            ws,
+            userId,
+            role,
+            speaking: false,
+            lastVoiceActivity: Date.now(),
+          };
+          rooms.get(roomId).add(clientRecord);
 
           log('ROOM JOIN', `conn#${connId}`, `user=${userId} role=${role} room=${roomId} total=${rooms.get(roomId).size}`);
 
@@ -174,11 +196,34 @@ wss.on('connection', (ws, req) => {
             return;
           }
           const speakingState = Boolean(data.speaking);
+          const client = findClient(roomId, ws);
+          if (client) {
+            client.speaking = speakingState;
+            client.lastVoiceActivity = Date.now();
+          }
+
           log('VOICE EVENT', `conn#${connId}`, `room=${roomId} user=${userId} speaking=${speakingState}`);
 
           const payload = { type: 'speaking', roomId, userId, speaking: speakingState };
           const targets = broadcastToRoom(roomId, payload, ws);
           log('ROOM BROADCAST', `room=${roomId}`, `event=speaking user=${userId} speaking=${speakingState} targets=${targets}`);
+          break;
+        }
+
+        case 'voice_heartbeat': {
+          if (!roomId || !userId) return;
+          const client = findClient(roomId, ws);
+          if (client) {
+            client.lastVoiceActivity = Date.now();
+            const heartbeatSpeaking = Boolean(data.speaking);
+            // If heartbeat indicates a state change (e.g. forced silent from visibility change), broadcast it
+            if (client.speaking !== heartbeatSpeaking) {
+              client.speaking = heartbeatSpeaking;
+              log('VOICE HEARTBEAT SYNC', `conn#${connId}`, `user=${userId} speaking=${heartbeatSpeaking}`);
+              const payload = { type: 'speaking', roomId, userId, speaking: heartbeatSpeaking };
+              broadcastToRoom(roomId, payload, ws);
+            }
+          }
           break;
         }
 
@@ -208,6 +253,7 @@ wss.on('connection', (ws, req) => {
       for (const c of roomClients) { if (c.ws === ws) { roomClients.delete(c); break; } }
 
       if (userId) {
+        log('VOICE DISCONNECT RESET', `user=${userId}`, `room=${roomId} speaking=false`);
         const targets = broadcastToRoom(roomId, { type: 'speaking', roomId, userId, speaking: false });
         log('ROOM BROADCAST', `room=${roomId}`, `event=speaking(leave) user=${userId} speaking=false targets=${targets}`);
 
@@ -226,24 +272,45 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// ── Heartbeat interval ────────────────────────────────────────────────────────
-// BUG FIX: read/write ws.isAlive on the ws object, NOT a closure variable.
-// Previously isAlive was a closure `let isAlive = true` scoped to the connection
-// handler. The interval only has the ws reference and cannot access that closure,
-// so ws.isAlive was always undefined (falsy) and every socket was terminated after 30s.
+// ── Voice Speaking Safety Timeout Interval (Every 1000ms) ───────────────────
+// If a client is marked as speaking:true but sends no voice heartbeat/speaking updates
+// for > 3500ms (e.g. browser minimized, tab backgrounded, throttled timers, lost network),
+// automatically force speaking:false and broadcast to all overlays.
+const voiceSafetyTimeoutInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, clients] of rooms.entries()) {
+    for (const client of clients) {
+      if (client.speaking === true && (now - client.lastVoiceActivity > VOICE_SAFETY_TIMEOUT_MS)) {
+        client.speaking = false;
+        log('VOICE TIMEOUT', `user=${client.userId}`, `room=${roomId} forcing speaking=false (inactive ${now - client.lastVoiceActivity}ms)`);
+        broadcastToRoom(roomId, {
+          type: 'speaking',
+          roomId,
+          userId: client.userId,
+          speaking: false,
+        });
+      }
+    }
+  }
+}, 1000);
+
+// ── Heartbeat Keepalive Interval (Every 30000ms) ───────────────────────────────
 const heartbeatInterval = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) {
       log('PING TIMEOUT', 'heartbeat', 'terminating unresponsive socket');
       return ws.terminate();
     }
-    ws.isAlive = false;   // will be reset to true when pong arrives
+    ws.isAlive = false;
     ws.ping();
     log('PING', 'heartbeat', `sent to ${wss.clients.size} client(s)`);
   });
 }, 30000);
 
-wss.on('close', () => clearInterval(heartbeatInterval));
+wss.on('close', () => {
+  clearInterval(heartbeatInterval);
+  clearInterval(voiceSafetyTimeoutInterval);
+});
 
 server.listen(PORT, '0.0.0.0', () => {
   log('SERVER START', `v${SERVER_VERSION}`, `port=${PORT} pid=${process.pid}`);

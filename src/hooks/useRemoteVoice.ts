@@ -204,6 +204,18 @@ export function useRemoteVoice(): UseRemoteVoiceResult {
             case 'joined': {
               if (Array.isArray(msg.users)) {
                 setRoomUsers(msg.users);
+                const activeUserIds = new Set(
+                  msg.users.map((u: RoomUser) => String(u.userId || '').toLowerCase())
+                );
+                setRemoteSpeaking(prev => {
+                  const next: Record<string, boolean> = {};
+                  for (const [k, v] of Object.entries(prev)) {
+                    if (activeUserIds.has(k.toLowerCase()) && v === true) {
+                      next[k] = true;
+                    }
+                  }
+                  return next;
+                });
               }
               break;
             }
