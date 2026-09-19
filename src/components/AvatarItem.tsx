@@ -154,22 +154,28 @@ export function AvatarItem({
       />
 
       {/* Name label */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: -4,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          color: 'white',
-          fontWeight: 'bold',
-          fontSize: Math.max(12, avatar.width * 0.08),
-          textShadow: '0 2px 4px black, 0 0 8px black',
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-        }}
-      >
-        {avatar.name}
-      </div>
+      {avatar.showName !== false && avatar.name && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: -4,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: avatar.textColor || '#ffffff',
+            fontFamily: avatar.fontFamily || 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontWeight: 'bold',
+            fontSize: avatar.fontSize || Math.max(12, avatar.width * 0.08),
+            textShadow: avatar.glowColor
+              ? `0 0 10px ${avatar.glowColor}, 0 0 4px ${avatar.glowColor}, 0 2px 4px black, 0 0 8px black`
+              : '0 2px 4px black, 0 0 8px black',
+            letterSpacing: '0.5px',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+          }}
+        >
+          {avatar.name}
+        </div>
+      )}
 
       {/* Resize handle (bottom-right corner) — edit mode only, selected */}
       {isEditing && isSelected && (

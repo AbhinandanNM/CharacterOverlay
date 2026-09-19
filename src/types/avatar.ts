@@ -14,6 +14,11 @@ export interface AvatarConfig {
   sensitivity: number;    // microphone volume threshold 1–30
   voiceUserId?: string;   // assigned remote user ID (e.g. "som", "atharv")
   isLocalUser?: boolean;  // true = this avatar is controlled by the local microphone
+  textColor?: string;     // custom name text color (hex e.g. "#ffffff")
+  fontFamily?: string;    // custom font family
+  fontSize?: number;      // custom font size multiplier/px
+  showName?: boolean;     // whether to display the name below avatar (default: true)
+  glowColor?: string;     // custom glow / text-shadow color
 }
 
 export interface RoomUser {
