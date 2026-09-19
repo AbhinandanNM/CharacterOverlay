@@ -11,4 +11,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("click-through-changed", handler);
     return () => ipcRenderer.removeListener("click-through-changed", handler);
   },
+  sendLocalSync: (data) => {
+    ipcRenderer.send("local-sync-send", data);
+  },
+  onLocalSync: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("local-sync-receive", handler);
+    return () => ipcRenderer.removeListener("local-sync-receive", handler);
+  },
 });
+

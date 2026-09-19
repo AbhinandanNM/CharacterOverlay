@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AvatarConfig } from '../types/avatar';
 import { DEFAULT_AVATARS, LAYOUT_STORAGE_KEY, NETWORK_STORAGE_KEY } from '../types/avatar';
+import { useLocalSync, type SyncMessage } from '../hooks/useLocalSync';
 import { AvatarStage } from './AvatarStage';
 
 function getInitialConfig() {
@@ -43,6 +44,19 @@ export function AvatarOverlay() {
 
   const [speakingMap, setSpeakingMap] = useState<Record<string, boolean>>({});
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Local real-time sync channel listener (<1ms update from Electron editor)
+  const handleLocalSyncMessage = useCallback((msg: SyncMessage) => {
+    if ((msg.type === 'AVATARS_UPDATE' || msg.type === 'LAYOUT_UPDATE') && Array.isArray(msg.avatars) && msg.avatars.length > 0) {
+      setAvatars(msg.avatars);
+      try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(msg.avatars)); } catch {}
+      console.log('[OBS OVERLAY] Instant local layout sync:', msg.avatars.length, 'avatars');
+    } else if (msg.type === 'SPEAKING_UPDATE' && msg.speaking) {
+      setSpeakingMap(prev => ({ ...prev, ...msg.speaking }));
+    }
+  }, []);
+
+  useLocalSync(handleLocalSyncMessage);
 
   useEffect(() => {
     console.log('[OBS OVERLAY] Created - Initializing OBS Browser Source for room:', roomId);

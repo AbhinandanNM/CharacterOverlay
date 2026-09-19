@@ -4,6 +4,7 @@ import { AvatarOverlay } from "./components/AvatarOverlay";
 import { AvatarStage } from "./components/AvatarStage";
 import { ControlPanel } from "./components/ControlPanel";
 import { useAvatarStore } from "./hooks/useAvatarStore";
+import { useLocalSync } from "./hooks/useLocalSync";
 import { useMicrophone } from "./hooks/useMicrophone";
 import { useRemoteVoice } from "./hooks/useRemoteVoice";
 
@@ -30,6 +31,7 @@ function App() {
 function EditorApp() {
   const store = useAvatarStore();
   const remote = useRemoteVoice();
+  const { sendSync } = useLocalSync();
 
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
@@ -42,26 +44,30 @@ function EditorApp() {
     channel.onmessage = (event) => {
       const data = event.data;
       if (data?.type === "REQUEST_INITIAL_STATE") {
-        channel.postMessage({
-          type: "AVATARS_UPDATE",
+        const msg = {
+          type: "AVATARS_UPDATE" as const,
           avatars: store.avatars,
-        });
+        };
+        channel.postMessage(msg);
+        sendSync(msg);
       }
     };
 
     return () => {
       channel.close();
     };
-  }, []);
+  }, [store.avatars, sendSync]);
 
-  // Broadcast avatar layout updates to OBS overlay via WebSocket and BroadcastChannel
+  // Broadcast avatar layout updates to OBS overlay via Local Sync, WebSocket and BroadcastChannel
   useEffect(() => {
-    syncChannelRef.current?.postMessage({
-      type: "AVATARS_UPDATE",
+    const msg = {
+      type: "AVATARS_UPDATE" as const,
       avatars: store.avatars,
-    });
+    };
+    sendSync(msg);
+    syncChannelRef.current?.postMessage(msg);
     remote.sendLayoutUpdate(store.avatars);
-  }, [store.avatars, remote.connected, remote.sendLayoutUpdate]);
+  }, [store.avatars, remote.connected, remote.sendLayoutUpdate, sendSync]);
 
   // Global overlay toggle listeners
   useEffect(() => {
@@ -139,11 +145,13 @@ function EditorApp() {
 
   // Broadcast speaking updates to OBS overlay in real time
   useEffect(() => {
-    syncChannelRef.current?.postMessage({
-      type: "SPEAKING_UPDATE",
+    const msg = {
+      type: "SPEAKING_UPDATE" as const,
       speaking: compositeSpeaking,
-    });
-  }, [compositeSpeaking]);
+    };
+    sendSync(msg);
+    syncChannelRef.current?.postMessage(msg);
+  }, [compositeSpeaking, sendSync]);
 
   return (
     <div className="app">
@@ -188,13 +196,20 @@ function EditorApp() {
           onSendToBack={store.sendToBack}
           onSaveLayout={() => {
             store.saveLayout();
+            const msg = {
+              type: "AVATARS_UPDATE" as const,
+              avatars: store.avatars,
+            };
+            sendSync(msg);
             remote.sendLayoutUpdate(store.avatars);
           }}
           onSyncLayout={() => {
-            syncChannelRef.current?.postMessage({
-              type: "AVATARS_UPDATE",
+            const msg = {
+              type: "AVATARS_UPDATE" as const,
               avatars: store.avatars,
-            });
+            };
+            sendSync(msg);
+            syncChannelRef.current?.postMessage(msg);
             remote.sendLayoutUpdate(store.avatars);
           }}
           onResetLayout={store.resetLayout}
